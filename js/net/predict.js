@@ -20,7 +20,7 @@
 //          contains it arrives, already advanced to where it is on MY clock, which is where it will be when it reaches me. The price: a shot the opponent steers or deflects after
 //          that can jump a little when the next snapshot corrects it. Add  ?predshots=0  to compare with the old behaviour.
 //      Deaths / round changes are always the server's word. Add  ?predworld=0  to the page URL to go back to predicting only my own player.
-const PRED_MAX_AHEAD = 40;   // never predict more than this many ticks past the last server state (spikes / stalls)
+const PRED_MAX_AHEAD = 90;   // never predict more than this many ticks past the last server state (spikes / stalls)
 const PRED_SNAP_DIST = 120;  // a correction bigger than this (u) is a teleport (respawn, hatchet): show it at once
 const PRED_BALL_SNAP = 220;  // same, for the ball (it is fast: a late opponent hit can legitimately move it far)
 const PRED_ERR_DECAY = 0.86; // per rendered frame, share of the visual correction that is left
@@ -96,7 +96,7 @@ function predSkipServerEvent(e) { // net.fire asks this for every server event
 function predAdvance(target) {
     if (!pred.state)
         return;
-    target = Math.min(target, pred.tick + PRED_MAX_AHEAD);
+    target = Math.min(target, pred.lastT + PRED_MAX_AHEAD);
     if (target <= pred.tick)
         return;
     const cap = [];

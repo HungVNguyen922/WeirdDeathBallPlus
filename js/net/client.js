@@ -32,12 +32,29 @@ function netMixBody(a, b, u) { // a player, the ball, a decoy, a peg or an arrow
         return u < 0.5 ? a : b;
     return netMix(a, b, u);
 }
-const netMixList = (la, lb, u) => (la.length === lb.length ? lb.map((b, i) => netMixBody(la[i], b, u)) : u < 0.5 ? la : lb); // different counts: something appeared or vanished
+const netMixList = (la, lb, u) => (la.length === lb.length ? lb.map((b, i) => netMixBody(la[i], b, u)) : u < 0.5 ? la : lb); // (still used for players, which are indexed by seat)
+
+// Match items by identity instead of list position. The list follows whichever snapshot is nearer in time (so the player's `tball` index
+// into the decoy list stays valid); an item the other snapshot lacks just appears / disappears at the halfway point.
+function netMixKeyed(la, lb, u, key) {
+    if (la.some(x => key(x) === undefined) || lb.some(x => key(x) === undefined))
+        return netMixList(la, lb, u); // old server without ids
+    const near = u < 0.5, base = near ? la : lb, other = new Map((near ? lb : la).map(x => [key(x), x]));
+    return base.map(x => {
+        const o = other.get(key(x));
+        return !o ? x : near ? netMixBody(x, o, u) : netMixBody(o, x, u);
+    });
+}
+const NET_KEYS = {
+    decoys: d => d.owner,                         // one decoy per player
+    pegs: q => q.owner + ':' + q.x + ':' + q.y,   // pegs never move
+    projectiles: p => p.id,
+};
 function netMixState(a, b, u) { // two saveState() snapshots -> one in between. Score, timers and flags come from whichever is nearer in time.
     if (a === b || u <= 0)
         return a;
     const s = u < 0.5 ? a : b;
-    return { ...s, players: netMixList(a.players, b.players, u), ball: netMixBody(a.ball, b.ball, u), decoys: netMixList(a.decoys, b.decoys, u), pegs: netMixList(a.pegs, b.pegs, u), projectiles: netMixList(a.projectiles || [], b.projectiles || [], u), saw: netMix(a.saw, b.saw, u), };
+    return { ...s, players: netMixList(a.players, b.players, u), ball: netMixBody(a.ball, b.ball, u), decoys: netMixList(a.decoys, b.decoys, u), pegs: netMixList(a.pegs, b.pegs, u), projectiles: netMixKeyed(a.projectiles || [], b.projectiles || [], u, NET_KEYS.projectiles), saw: netMix(a.saw, b.saw, u), };
 }
 
 function netClearAI() { // online every seat is a person: the offline AI flags must not carry over (they kept drawing "AI" tags and let the computer steer predicted players)

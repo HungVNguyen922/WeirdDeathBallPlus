@@ -1,9 +1,10 @@
 const projectiles = [];
+let projSeq = 0; // last projectile id handed out (saved, so a rollback hands out the same ids)
 const PROJ_TYPES = {}; // each special registers its own type
 const projOf = type => projectiles.filter(p => p.type === type);
 function spawnProjectile(type, owner, x, y, vx, vy, extra = {}) { // extra overrides anything (r, life, ang...) and adds per-type fields
     const T = PROJ_TYPES[type];
-    const p = { type, x, y, vx, vy, ang: Math.atan2(vy, vx), r: T.r, team: owner.team, owner, life: T.life, pLock: 0, ...extra };
+    const p = { type, id: ++projSeq, x, y, vx, vy, ang: Math.atan2(vy, vx), r: T.r, team: owner.team, owner, life: T.life, pLock: 0, ...extra };
     projectiles.push(p);
     return p;
 }

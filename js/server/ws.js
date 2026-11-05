@@ -142,7 +142,8 @@ function attachWebSocket(httpServer, onConnection) {
             return;
         }
         // ---- abuse limits (see apply-fixes.js) ----
-        const ip = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim() || socket.remoteAddress || '', loop = /^(::1|127\.|::ffff:127\.)/.test(ip);
+        const xff = String(req.headers['x-forwarded-for'] || '').split(',').map(s => s.trim()).filter(Boolean);
+        const ip = (xff.length ? xff[xff.length - 2] : socket.remoteAddress) || '', loop = /^(::1|127\.|::ffff:127\.)/.test(ip);
         const origin = req.headers.origin;
         if (origin && ORIGINS.length && !ORIGINS.includes(origin)) {
             try { if (new URL(origin).host !== req.headers.host) { socket.end('HTTP/1.1 403 Forbidden\r\n\r\n'); return; } } catch (e) { socket.end('HTTP/1.1 403 Forbidden\r\n\r\n'); return; }

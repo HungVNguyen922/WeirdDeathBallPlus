@@ -65,7 +65,7 @@ function saveState() {
         pegs: pegs.map(owned),
         projectiles: projectiles.map(owned),
         portals: portals.map(owned),
-        portalSeq,
+        portalSeq, projSeq,
         mines: mines.map(owned),
         statics: statics.map(owned),
         staticSeq,
@@ -140,6 +140,7 @@ function loadState(s) {
     portals.length = 0;
     portals.push(...relink(s.portals || []));
     portalSeq = s.portalSeq || 0;
+    projSeq = s.projSeq || 0;
     mines.length = 0;
     mines.push(...relink(s.mines || []));
     mineSeq = s.mineSeq || 0;
