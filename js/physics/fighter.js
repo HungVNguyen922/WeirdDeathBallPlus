@@ -47,12 +47,21 @@ const FIGHTER_DIAG = [1, 3, 7, 9];
 const FIGHTER_MOVES = [
     // Physical Attacks
     // Forwards
-    { id: 'uppercut', name: 'UPPERCUT', motion: '623', button: 'sp', startup: 6, active: 14, recovery: 34, vx: 80, vy: -420, hit: { x: 22, y: -26, r: 28 }, knock: { x: 140, y: -640 }, ballKnock: { x: 200, y: -820 }, stun: { t: 0.5 }, cancel: true },
-    { id: 'tatsu', name: 'TATSU', motion: '214', button: 'sp', startup: 8, active: 36, recovery: 28, rehit: 6, vx: 200, vy: 0, hit: { x: 0, y: 0, rx: 60, ry: 22 }, away: true, knock: { x: 90, y: -140 }, ballKnock: { x: 450, y: -300 }, stun: { t: 0.3 } },
-    { id: 'rush', name: 'RUSH', motion: '46', button: 'sp', startup: 10, active: 16, recovery: 26, vx: 200, hit: { x: 30, y: 0, r: 26 }, knock: { x: 150, y: -40 }, ballKnock: { x: 700, y: -80 }, stun: { t: 0.5 }, cancel: true },
+    //qcf
+    { id: 'uppercut', name: 'UPPERCUT', motion: '236', button: 'sp', startup: 6, active: 14, recovery: 34, vx: 80, vy: -420, hit: { x: 22, y: -26, r: 28 }, knock: { x: 140, y: -640 }, ballKnock: { x: 200, y: -820 }, stun: { t: 0.5 }, cancel: true },
+    { id: 'plunge', name: 'PLUNGE', motion: '896', button: 'sp', startup: 15, active: 16, recovery: 30, vy: 500, hit: { x: 30, y: 30, rx: 30, ry: 60 }, knock: { x: 150, y: 400 }, ballKnock: { x: 150, y: 800 }, stun: { t: 1 }, cancel: false },
+    { id: 'throw', name: 'THROW', motion: '478', button: 'sp', startup: 15, active: 16, recovery: 30, vy: -0, hit: { x: -30, y: -30, rx: 45, ry: 45 }, knock: { x: 500, y: -500 }, ballKnock: { x: -500, y: 500 }, stun: { t: .25 }, cancel: false },
+    { id: 'stomp', name: 'STOMP', motion: '412', button: 'sp', startup: 15, active: 16, recovery: 30, vy: -0, hit: { x: -30, y: 30, rx: 45, ry: 45 }, knock: { x: -300, y: 300 }, ballKnock: { x: 300, y: 300 }, stun: { t: .75 }, cancel: true },
+
+    //qcb
+    { id: 'tatsu', name: 'TATSU', motion: '632', button: 'sp', startup: 8, active: 36, recovery: 28, rehit: 6, vx: 200, vy: 0, hit: { x: 0, y: 0, rx: 60, ry: 22 }, away: true, knock: { x: 90, y: -140 }, ballKnock: { x: 450, y: -300 }, stun: { t: 0.3 } },
     { id: 'whirlwind', name: 'WHIRLWIND', motion: '698', button: 'sp', startup: 8, active: 20, recovery: 32, sweep: { r: 2 * PL, a0: 0, a1: Math.PI, hitR: 24, speed: 500, ballSpeed: 500, steer: true, carry: 1 }, stun: { t: 0.5 }, cancel: true },
-    // Backwards
+    { id: 'blowback', name: 'BLOWBACK', motion: '874', button: 'sp', startup: 8, active: 36, recovery: 28, rehit: 6, vx: -200, vy: 0, hit: { x: -40, y: 0, rx: 60, ry: 16 }, away: true, knock: { x: 90, y: -140 }, ballKnock: { x: 450, y: -300 }, stun: { t: 0.3 } },
+    { id: 'trip', name: 'TRIP', motion: '214', button: 'sp', startup: 8, active: 36, recovery: 28, rehit: 6, vx: 0, vy: 0, hit: { x: 0, y: 10, rx: 80, ry: 8 }, away: true, knock: { x: 90, y: -840 }, ballKnock: { x: 200, y: -820 }, stun: { t: 1 }, cancel: false },
+
+    // 2keys
     { id: 'backdash', name: 'BACKDASH', motion: '64', button: 'sp', back: true, startup: 4, active: 10, recovery: 20, vx: 400 },
+    { id: 'rush', name: 'RUSH', motion: '46', button: 'sp', startup: 10, active: 16, recovery: 26, vx: 200, hit: { x: 30, y: 0, r: 26 }, knock: { x: 150, y: -40 }, ballKnock: { x: 700, y: -80 }, stun: { t: 0.5 }, cancel: true },
     
     // Special Attacks
     { id: 'fireball', name: 'FIREBALL', motion: '236', button: 'sp2', startup: 14, active: 2, recovery: 34, fire: { x: 36, y: -2, vx: 500, r: PL / 2, life: 2, knock: { x: 200, y: 0 }, ballKnock: { x: 200, y: 0 }, stun: { t: 0.25 } } },
