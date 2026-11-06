@@ -21,6 +21,7 @@ const PICK_DESC = { // two short lines under the highlighted special
     mines: ['Plant mines on surfaces (1 s).', 'Hold special + weight: blast.'],
     accelerator: ['Press to drop nodes. Lines link', 'every node; crossing one speeds', 'you up, and the ball you held.'],
     split: ['Halve yourself, leave a copy.', 'Touch a copy to merge back.', 'Weight + key: swap bodies.'],
+    builder: ['Press to drop a block where you', 'stand. Hold special + weight:', 'remove the block you last placed.'],
     fighter: ['Takes both slots. P / K buttons,', 'motion inputs like 236 + a button.'], 
 };
 const pickSp = id => SPECIALS.find(a => a.id === id) || SPECIALS[0];

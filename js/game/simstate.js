@@ -24,7 +24,7 @@ function cloneData(v) {
 }
 
 function saveState() {
-    const ballRef = b => (b == null ? null : b === ball ? 0 : decoys.indexOf(b) + 1); // 0 = death ball, 1.. = decoy index
+    const ballRef = b => (b == null ? null : b === ball ? 0 : b.type === 'block' ? -(projectiles.indexOf(b) + 1) : decoys.indexOf(b) + 1); // 0 = death ball, 1.. = decoy, ..-1 = projectile (block)
     const ownerId = o => (o ? o.id : null);
     const body = b => { // a Ball (death ball or decoy): own fields except the owner reference
         const o = {};
@@ -151,7 +151,7 @@ function loadState(s) {
     // Tethers last, once the decoys exist.
     allPlayers.forEach((p, i) => {
         const r = s.players[i] ? s.players[i].tball : null;
-        p.tball = r === null ? null : r === 0 ? ball : decoys[r - 1] || null;
+        p.tball = r === null ? null : r === 0 ? ball : r < 0 ? projectiles[-r - 1] || null : decoys[r - 1] || null;
     });
 }
 

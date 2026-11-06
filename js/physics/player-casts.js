@@ -69,6 +69,11 @@ mixin(Player, {
             }
         } else if (id === 'accelerator' && this.cd.accelerator <= 0 && !this.sim) {
             c = { type: 'accelerator', t: ACCELERATOR_CAST, t0: ACCELERATOR_CAST, x: this.x, y: this.y, hx, hy };
+        } else if (id === 'builder') { // instant: build a block in the arrows' direction; weight = the sloped / domed version
+            if (this.cd.builder <= 0 && !this.sim) {
+                buildBlock(this, hx, hy, !!k.x);
+                return true;
+            }
         } else if (id === 'warp') { // instant: no cast, no timer (see warpPress)
             this.warpPress();
             return true;

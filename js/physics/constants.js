@@ -506,8 +506,29 @@ const ACCELERATOR_LIFE = 0;                   // s a node lasts (0 = until the r
 const ACCELERATOR_BOOST_TEAMMATES = false;    // true = the owner's teammates are sped up by the lines too (the owner always is; the death ball and decoys only when the owner grappled them last)
 const ACCELERATOR_NODE_R = 6;                 // node radius as DRAWN (u; display only)
 
+// --- Builder ---------------------------------------------------------------------------------------------------------------------------------------------------------
+// Press the special key to build an object based on your directional key inputs
+const BUILDER_SIZE = 32;          // square side = player diameter (set to 2 * player r). UD is 2*SIZE wide x SIZE tall.
+const BUILDER_COOLDOWN = 2.5;     // s after a successful build
+const BUILDER_MISS_CD = 0.4;      // s after a build that was blocked by terrain / no room
+const BUILDER_MAX = 10;            // blocks per player; the oldest vanishes on the next build
+const BUILDER_LIFE = 1e9;         // seconds before a block disappears by itself. MUST be > 0: projectiles die when life <= 0 (0 would remove it instantly). Use e.g. 30 for a timeout.
+const BUILDER_M = BALL_M;         // collision mass: same as the death ball (BALL_M, in the units PLAYER_M / BALL_M use)
+const BUILDER_G = BALL_G;         // gravity: same as the death ball
+const BUILDER_DRAG = 0.05;        // air drag per second: the death ball's (0.05)
+const BUILDER_E = 0.25;           // bounce off terrain
+const BUILDER_E_BODY = 0.4;       // bounce off the death ball / decoys / other blocks
+const BUILDER_E_PLAYER = 0.15;    // bounce off players (low: players land on them)
+const BUILDER_MU = 0.5;           // friction between a block and terrain / the ball (players never rub on blocks). Makes blocks tip, roll and spin.
+const BUILDER_INHERIT = 1;        // how much of your velocity the block is built with (0 = starts still, 1 = your full momentum)
+const BUILDER_BREAK_V = 500;      // closing speed that breaks a block
+const BUILDER_TERRAIN_K = 0.7;    // terrain hits count this much toward breaking
+const BUILDER_GRACE = 0.3;        // s after being built during which it cannot break
+const BUILDER_BREAK_R = 200;       // radius of the break shove
+const BUILDER_BREAK_KICK = 400;   // the "slight impulse" on break (u/s)
+
 // --- The ability table: reads every cooldown above, so it has to stay below them ------------------------------------------------------------------------------------
-const ABILITY = { dash: { cast: DASH_CAST, cd: DASH_COOLDOWN }, plinko: { cast: PLINKO_CAST, cd: PLINKO_COOLDOWN }, marionette: { cd: MARIONETTE_COOLDOWN }, decoy: { cast: DECOY_CAST, cd: DECOY_COOLDOWN }, arrow: { cd: ARROW_COOLDOWN }, bat: { cd: BAT_COOLDOWN }, barbwire: { cd: BARBWIRE_MAX_T * BARBWIRE_CD_RATIO }, warp: { cd: WARP_COOLDOWN }, awakened: { cd: AWAKENED_COOLDOWN }, explode: { cd: EXPLODE_COOLDOWN }, hopper: { cd: HOPPER_COOLDOWN }, boomerang: { cd: BOOMERANG_COOLDOWN }, portal: { cd: PORTAL_COOLDOWN }, swap: { cd: SWAP_COOLDOWN }, smoke: { cd: SMOKE_COOLDOWN }, pong: { cd: PONG_COOLDOWN }, mines: { cd: MINE_COOLDOWN }, split: { cd: SPLIT_COOLDOWN}, accelerator: { cd: ACCELERATOR_COOLDOWN }, fighter: { cd: FIGHTER_COOLDOWN} }; // (cd here is the largest possible cooldown: the HUD tint is shown as a share of it)
+const ABILITY = { dash: { cast: DASH_CAST, cd: DASH_COOLDOWN }, plinko: { cast: PLINKO_CAST, cd: PLINKO_COOLDOWN }, marionette: { cd: MARIONETTE_COOLDOWN }, decoy: { cast: DECOY_CAST, cd: DECOY_COOLDOWN }, arrow: { cd: ARROW_COOLDOWN }, bat: { cd: BAT_COOLDOWN }, barbwire: { cd: BARBWIRE_MAX_T * BARBWIRE_CD_RATIO }, warp: { cd: WARP_COOLDOWN }, awakened: { cd: AWAKENED_COOLDOWN }, explode: { cd: EXPLODE_COOLDOWN }, hopper: { cd: HOPPER_COOLDOWN }, boomerang: { cd: BOOMERANG_COOLDOWN }, portal: { cd: PORTAL_COOLDOWN }, swap: { cd: SWAP_COOLDOWN }, smoke: { cd: SMOKE_COOLDOWN }, pong: { cd: PONG_COOLDOWN }, mines: { cd: MINE_COOLDOWN }, split: { cd: SPLIT_COOLDOWN}, accelerator: { cd: ACCELERATOR_COOLDOWN }, builder: { cd: BUILDER_COOLDOWN }, fighter: { cd: FIGHTER_COOLDOWN} }; // (cd here is the largest possible cooldown: the HUD tint is shown as a share of it)
 
 // =====================================================================================================================================================================
 // 11  MATCH

@@ -98,6 +98,12 @@ mixin(Player, {
             const hd = Math.hypot(hp.x - this.x, hp.y - this.y);
             c.push({ p: hp, d: hd, len: Math.max(hd, 41), b: true, ground: false, ball: b, decoy: b !== ball });
         }
+        if (!this.sim)
+            for (const b of projectiles)
+                if (b.type === 'block' && !b.broken) {
+                    const hp = blockNearest(b, this.x, this.y), hd = Math.hypot(hp.x - this.x, hp.y - this.y);
+                    c.push({ p: hp, d: hd, len: Math.max(hd, 41), b: true, ground: false, ball: b, decoy: true, block: true });
+                }
         return c.filter(o => o.d <= playerReach(this));
     },
     inReach(ball) { return this.candidates(ball).length > 0; },
@@ -115,6 +121,7 @@ mixin(Player, {
             this.ropeGround = false;
             this.ropeBase = null;
             this.hookAng = Math.atan2(best.p.y - best.ball.y, best.p.x - best.ball.x) - best.ball.th;
+            this.hookR = best.block ? Math.hypot(best.p.x - best.ball.x, best.p.y - best.ball.y) : 0; // 0 = on the ball's edge (tb.r)
             return;
         }
         const delay = this.grounded ? GROUND_DELAY : HOOK_DELAY; // the hook takes a moment to land
@@ -213,8 +220,8 @@ mixin(Player, {
                 a.y = this.ropeBase.y + sawY(a.x);
             if (this.onBall) {
                 const ang = tb.th + this.hookAng;
-                a.x = tb.x + Math.cos(ang) * tb.r;
-                a.y = tb.y + Math.sin(ang) * tb.r;
+                a.x = tb.x + Math.cos(ang) * (this.hookR || tb.r);
+                a.y = tb.y + Math.sin(ang) * (this.hookR || tb.r);
             }
             const dx = a.x - this.x, dy = a.y - this.y, d = Math.hypot(dx, dy) || 1, nx = dx / d, ny = dy / d;
             const rx = a.x - tb.x, ry = a.y - tb.y; // hook offset from the ball's center

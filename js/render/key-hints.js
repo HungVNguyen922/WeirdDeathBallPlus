@@ -170,6 +170,10 @@ function iconGlyph(kind, x, y, color) { // little icons: grapple hook, kettlebel
         for (const [nx, ny] of [[-8, 6], [0, -8], [8, 6]]) {
             cx.beginPath(); cx.arc(nx, ny, 2.8, 0, 7); cx.fill();
         }
+    } else if (kind === 'builder') { // a block and a slope stacked
+      cx.lineWidth = 2;
+      cx.strokeRect(-9, -2, 10, 10);
+      cx.beginPath(); cx.moveTo(1, 8); cx.lineTo(9, 8); cx.lineTo(1, -2); cx.closePath(); cx.stroke();
     } else if (kind === 'locked') { // padlock
         cx.fillRect(-6, -1, 12, 9);
         cx.beginPath(); cx.arc(0, -2, 4.5, Math.PI, 0); cx.stroke();

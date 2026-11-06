@@ -23,6 +23,7 @@ class Player {
         this.onBall = false;
         this.len = 0;
         this.hookAng = 0;
+        this.hookR = 0;
         this.ropeGround = false;
         this.prevX = false;
         this.kickReq = false;

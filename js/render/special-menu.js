@@ -20,6 +20,7 @@ const SPECIALS = [
     { id: 'mines', name: 'MINES', icon: 'mines' },
     { id: 'split', name: 'SPLIT', icon: 'split' },
     { id: 'accelerator', name: 'ACCELERATOR', icon: 'accelerator' },
+    { id: 'builder', name: 'BUILDER', icon: 'builder' },
     { id: 'fighter', name: 'FIGHTER', icon: 'fighter', get locked() { return !twoSpecials; } },
 ];
 
