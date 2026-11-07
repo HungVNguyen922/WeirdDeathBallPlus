@@ -74,10 +74,17 @@ function drawSwaps() { // Swap: the cone of vision while aiming (with the body i
 }
 // Swap flight: the bodies already sit at their new spots (the sim moves them at once), so a ghost of each one flies the old way round on opposite arcs, with a trail, while the
 // real bodies fade in at the far end (see swapArrive) and rings pop at both ends. Everything here is display only.
-function swapGhost(kind, x, y, r, col, ang, alpha) {
+function swapGhost(kind, x, y, r, col, ang, alpha, pts) {
     cx.save();
     cx.globalAlpha = alpha;
-    if (kind === 'arrow') {
+    if (kind === 'block' && pts) {
+        cx.translate(x, y);
+        cx.rotate(ang);
+        cx.fillStyle = col; cx.strokeStyle = '#fff'; cx.lineWidth = 2; cx.lineJoin = 'round';
+        cx.beginPath();
+        pts.forEach(([px, py], i) => (i ? cx.lineTo(px, py) : cx.moveTo(px, py)));
+        cx.closePath(); cx.fill(); cx.stroke();
+    } else if (kind === 'arrow') {
         arrowShape(x, y, ang, ARROW_LEN, col, alpha);
     } else if (kind === 'ball') {
         cx.fillStyle = '#000'; cx.strokeStyle = '#b36bff'; cx.lineWidth = 3;
@@ -100,8 +107,8 @@ function drawSwapFlight(p, f) {
     cx.globalAlpha = 0.5 * u; cx.strokeStyle = p.color || '#fff'; cx.lineWidth = 2; cx.setLineDash([4, 6]);
     cx.beginPath(); line(f.ax, f.ay, f.bx, f.by); cx.stroke();
     cx.setLineDash([]);
-    const lanes = [[false, 1, p.color || '#fff', f.pr, 'player', 0], [true, -1, f.bcol || '#b36bff', f.br, f.bk, f.bang]]; // [flies b -> a, arc side, colour, radius, kind, angle]
-    for (const [rev, side, col, r, kind, ang] of lanes) {
+    const lanes = [[false, 1, p.color || '#fff', f.pr, 'player', 0], [true, -1, f.bcol || '#b36bff', f.br, f.bk, f.bang, f.bpts]]; // [flies b -> a, arc side, colour, radius, kind, angle]
+    for (const [rev, side, col, r, kind, ang, pts] of lanes) {
         const e = ease(prog);
         cx.save();
         cx.globalCompositeOperation = 'lighter';
@@ -112,7 +119,7 @@ function drawSwapFlight(p, f) {
         }
         cx.restore();
         const g = at(e, side, rev);
-        swapGhost(kind, g.x, g.y, r, col, ang, 0.9 * u + 0.1);
+        swapGhost(kind, g.x, g.y, r, col, ang, 0.9 * u + 0.1, pts);
     }
     for (const [x, y, r] of [[f.ax, f.ay, f.pr], [f.bx, f.by, f.br]]) { // a ring at each end: it opens where the body left and closes in on where it lands
         cx.strokeStyle = '#fff'; cx.lineWidth = 3 * u + 1;

@@ -29,7 +29,7 @@ const events = {
 // their normal keys. On the screen: left / right / up / down move the cursor over a grid PICK_COLS wide, grapple or special locks the choice in, weight takes it back.
 // The computer always takes Dash (it is the only special the AI knows how to use). When everybody is locked in, a short countdown runs and the point starts.
 const PICK_EVERY = 5, PICK_COLS = 5, PICK_GO_T = 0.9; // points between screens, icons per row, seconds of "get ready" after the last lock-in
-const PICK_LIST = ['dash', 'plinko', 'marionette', 'decoy', 'arrow', 'bat', 'barbwire', 'warp', 'awakened', 'explode', 'hopper', 'boomerang', 'portal', 'swap', 'smoke', 'pong', 'mines', 'split', 'accelerator', 'builder', 'fighter' ]; // the grid, in reading order (same ids as SPECIALS in render/special-menu.js)
+const PICK_LIST = ['dash', 'plinko', 'marionette', 'decoy', 'arrow', 'bat', 'barbwire', 'warp', 'awakened', 'explode', 'hopper', 'boomerang', 'portal', 'swap', 'smoke', 'pong', 'mines', 'split', 'accelerator', 'builder', 'reel', 'fighter' ]; // the grid, in reading order (same ids as SPECIALS in render/special-menu.js)
 const PICK_DUAL = ['fighter']; // abilities that take both slots: they get their own row(s) at the bottom
 const pickRows = (() => { // rows of PICK_LIST indices
     const norm = [], dual = [], rows = [];
@@ -88,10 +88,11 @@ function pickStep() { // one physics step of an open pick screen
     for (const p of players) {
         const id = p.id, bits = keyBits(p.keys), fresh = bits & ~pick.prev[id];
         pick.prev[id] = bits;
-        if (ai[id].on) { // the computer takes Dash after a moment
-            pick.cur[id] = 0;
+        if (ai[id].on) { // the computer picks one of the specials it knows (see AI_SPECIAL_POOL in ai.js)
+            pick.cur[id] = Math.max(0, PICK_LIST.indexOf(p.special));
             if (!pick.ready[id] && pick.t > 0.7 + 0.2 * id) {
-                p.special = 'dash';
+                p.special = aiPickSpecial(p);
+                pick.cur[id] = Math.max(0, PICK_LIST.indexOf(p.special));
                 pick.ready[id] = true;
             }
             continue;

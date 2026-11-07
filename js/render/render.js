@@ -41,6 +41,7 @@ function drawScene() {
     drawMineBlasts();
     drawGrappleRange();
     drawRopes();
+    drawReelFx();
     drawDashStreaks();
     drawPlayerTrails();
     drawPlayers();

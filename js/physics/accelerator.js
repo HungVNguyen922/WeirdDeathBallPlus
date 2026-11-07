@@ -15,7 +15,7 @@ function placeAcceleratorNode(p) {
     return placeStatic('accelerator', p, p.x, p.y);
 }
 function acceleratorBoosts(b, s) { // does a line of s's owner speed b up?
-    return b === s.owner || b.lastGrab === s.owner.id || (ACCELERATOR_BOOST_TEAMMATES && b instanceof Player && b.team === s.team);
+    return b === s.owner || b.lastGrab === s.owner.id || (b.type === 'block' && b.owner === s.owner) || (ACCELERATOR_BOOST_TEAMMATES && b instanceof Player && b.team === s.team);
 }
 function acceleratorBoost(b) {
     const k = 1 + ACCELERATOR_BOOST;

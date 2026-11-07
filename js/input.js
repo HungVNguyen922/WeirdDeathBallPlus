@@ -109,6 +109,16 @@ window.addEventListener('blur', () => allPlayers.forEach(p => Object.assign(p.ke
 const arenaPos = e => { const r = cv.getBoundingClientRect(); return [(e.clientX - r.left) * cv.width / r.width - OX, (e.clientY - r.top) * cv.height / r.height - HUD]; };
 cv.addEventListener('mousemove', e => { ui.hover = uiHit(...arenaPos(e)); cv.style.cursor = ui.hover ? 'pointer' : ''; });
 cv.addEventListener('mouseleave', () => { ui.hover = null; cv.style.cursor = ''; });
+cv.addEventListener('wheel', e => { // a long special list scrolls with the wheel / touchpad while the pointer is over it
+    if (ui.open < 0)
+        return;
+    const [x, y] = arenaPos(e);
+    if (!inRect(spList(ui.open, ui.slot), x, y))
+        return;
+    e.preventDefault();
+    spWheel(e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY); // (line-mode wheels report lines, not pixels)
+    ui.hover = uiHit(x, y);
+}, { passive: false });
 cv.addEventListener('click', e => {
     const h = uiHit(...arenaPos(e));
     if (!h)
@@ -119,9 +129,13 @@ cv.addEventListener('click', e => {
     } else if (h.type === 'key') {
         if (!net.on || h.i === net.slot) { // NET: online you can only change your own special
             const same = ui.open === h.i && ui.slot === h.slot;
-            ui.open = same ? -1 : h.i;
-            ui.slot = h.slot;
+            if (same)
+                closeSpecialMenu();
+            else
+                spOpen(h.i, h.slot);
         }
+    } else if (h.type === 'scroll') { // an arrow row of a long list: scroll, keep it open
+        spScrollBy(h.dir * 3);
     } else if (!SPECIALS[h.n].locked) {
         if (net.on)
             net.setSpecial(SPECIALS[h.n].id, h.slot);

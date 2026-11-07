@@ -20,6 +20,9 @@ function batStep(p, c, ball) {
         for (const q of players)
             if (q !== p && q.alive && (BAT_HITS_TEAMMATES || q.team !== p.team))
                 targets.push(q);
+        for (const k of projOf('block')) // the Builder's blocks (before the arrows: arrows are not in the hit mask)
+            if (!k.broken)
+                targets.push(k);
         for (const a of projOf('arrow')) // arrows last: they are not tracked in the c.hits mask (their own immunity timer stops a second hit instead)
             if (BAT_HITS_STUCK_ARROWS || !a.stuck)
                 targets.push(a);
@@ -56,8 +59,13 @@ function batStep(p, c, ball) {
         if (isArrow)
             arrowKnock(b, nvx, nvy, ARROW_DEFLECT_TEAM ? p.team : null, ARROW_DEFLECT_TEAM ? p : null);
         else {
+            const ovx = b.vx, ovy = b.vy;
             b.vx = nvx;
             b.vy = nvy;
+            if (b.type === 'block') { // a block spins by where the bat caught it
+                const cd2 = Math.max(p.r, d - b.r);
+                bkSpin(b, p.x + ox * cd2, p.y + oy * cd2, nvx - ovx, nvy - ovy);
+            }
         }
         if (b.boost !== undefined) { // balls: big hits raise the speed cap briefly, like a hatchet hit
             const sp2 = Math.hypot(b.vx, b.vy);

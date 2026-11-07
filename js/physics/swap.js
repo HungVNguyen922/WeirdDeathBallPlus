@@ -56,9 +56,13 @@ function doSwap(p, b) {
         b.life = Math.max(b.life, ARROW_KNOCK_LIFE);
         b.immune = ARROW_IMMUNE_T;
     }
+    if (b.type === 'block') { // it may land inside terrain: it must not shatter on the first tick
+        b.age = 0;
+        b.hitV = 0;
+    }
     // What the renderer needs to fly a ghost of each body between the two spots (plain data, so it travels in snapshots): what b is, its size and colour.
-    const kind = b instanceof Player ? 'player' : 'stuck' in b ? 'arrow' : 'phase' in b ? 'boomerang' : 'ball';
-    p.swapFx = { t: SWAP_FX, ax, ay, bx, by, pr: p.r, bk: kind, br: b.r || 8, bcol: kind === 'player' ? b.color : kind === 'arrow' || kind === 'boomerang' ? (b.team === 0 ? '#42a5f5' : '#ef5350') : null, bang: b.ang === undefined ? 0 : b.ang, bid: kind === 'player' ? b.id : -1 };
+    const kind = b instanceof Player ? 'player' : b.type === 'block' ? 'block' : 'stuck' in b ? 'arrow' : 'phase' in b ? 'boomerang' : 'ball';
+    p.swapFx = { t: SWAP_FX, ax, ay, bx, by, pr: p.r, bk: kind, br: b.r || 8, bcol: kind === 'player' ? b.color : kind === 'arrow' || kind === 'boomerang' || kind === 'block' ? (b.team === 0 ? '#42a5f5' : '#ef5350') : null, bang: kind === 'block' ? b.th : b.ang === undefined ? 0 : b.ang, bid: kind === 'player' ? b.id : -1, bpts: kind === 'block' ? b.pts : null };
 }
 function clearSwaps() { // new round
     for (const p of allPlayers) {

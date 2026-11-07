@@ -511,7 +511,7 @@ const ACCELERATOR_NODE_R = 6;                 // node radius as DRAWN (u; displa
 const BUILDER_SIZE = 32;          // square side = player diameter (set to 2 * player r). UD is 2*SIZE wide x SIZE tall.
 const BUILDER_COOLDOWN = 2.5;     // s after a successful build
 const BUILDER_MISS_CD = 0.4;      // s after a build that was blocked by terrain / no room
-const BUILDER_MAX = 10;            // blocks per player; the oldest vanishes on the next build
+const BUILDER_MAX = 5;            // blocks per player; the oldest vanishes on the next build
 const BUILDER_LIFE = 1e9;         // seconds before a block disappears by itself. MUST be > 0: projectiles die when life <= 0 (0 would remove it instantly). Use e.g. 30 for a timeout.
 const BUILDER_M = BALL_M;         // collision mass: same as the death ball (BALL_M, in the units PLAYER_M / BALL_M use)
 const BUILDER_G = BALL_G;         // gravity: same as the death ball
@@ -521,14 +521,30 @@ const BUILDER_E_BODY = 0.4;       // bounce off the death ball / decoys / other 
 const BUILDER_E_PLAYER = 0.15;    // bounce off players (low: players land on them)
 const BUILDER_MU = 0.5;           // friction between a block and terrain / the ball (players never rub on blocks). Makes blocks tip, roll and spin.
 const BUILDER_INHERIT = 1;        // how much of your velocity the block is built with (0 = starts still, 1 = your full momentum)
-const BUILDER_BREAK_V = 500;      // closing speed that breaks a block
+const BUILDER_BREAK_V = 350;      // closing speed that breaks a block
+const BUILDER_DUR_BIG = 2;        // 2:1 blocks (slab, tall slab, oval) take this many times BUILDER_BREAK_V to break. 1:1 blocks (square, triangle, circle) break at BUILDER_BREAK_V: lower that to make them frailer.
+const BUILDER_PUSH_MIN_V = 40;    // u/s: a block and a player both moving at least this fast the same way push each other instead of breaking the block
 const BUILDER_TERRAIN_K = 0.7;    // terrain hits count this much toward breaking
 const BUILDER_GRACE = 0.3;        // s after being built during which it cannot break
 const BUILDER_BREAK_R = 200;       // radius of the break shove
 const BUILDER_BREAK_KICK = 400;   // the "slight impulse" on break (u/s)
 
+// --- Reel ---------------------------------------------------------------------------------------------------------------------------------------------------------
+// Press the special to extend your grapple. Hold weight and then press hold special to pull the grappled object near you
+const REEL_COOLDOWN = 5
+const REEL_OUT_LEN = 120, REEL_LEN_CAP = 1.6;   // pay-out length; cap relative to grapple reach
+const REEL_OUT_RATE = 500, REEL_OUT_MIN = 120, REEL_OUT_EASE = 5; // peak pay-out speed (u/s), minimum speed at the end, how fast it eases off (1/s)
+const REEL_OUT_ACC = 6000;                      // how hard the ball / you are shoved up to that speed (u/s^2)
+const REEL_SWIRL = 20, REEL_SWIRL_T = 0.3, REEL_SWIRL_MIN_V = 20; // the outward -> sideways conversion: rate (1/s), tail after the pay-out (s), skip it when barely circling
+const REEL_PUSH_K = 0.65;                       // on a platform: your outward speed as a share of the ball's
+const REEL_IN_RATE = 500
+const REEL_BALL_ACC = 2500
+const REEL_BALL_V = 600
+const REEL_PLAYER_ACC = 3000
+const REEL_PLAYER_V = 650
+
 // --- The ability table: reads every cooldown above, so it has to stay below them ------------------------------------------------------------------------------------
-const ABILITY = { dash: { cast: DASH_CAST, cd: DASH_COOLDOWN }, plinko: { cast: PLINKO_CAST, cd: PLINKO_COOLDOWN }, marionette: { cd: MARIONETTE_COOLDOWN }, decoy: { cast: DECOY_CAST, cd: DECOY_COOLDOWN }, arrow: { cd: ARROW_COOLDOWN }, bat: { cd: BAT_COOLDOWN }, barbwire: { cd: BARBWIRE_MAX_T * BARBWIRE_CD_RATIO }, warp: { cd: WARP_COOLDOWN }, awakened: { cd: AWAKENED_COOLDOWN }, explode: { cd: EXPLODE_COOLDOWN }, hopper: { cd: HOPPER_COOLDOWN }, boomerang: { cd: BOOMERANG_COOLDOWN }, portal: { cd: PORTAL_COOLDOWN }, swap: { cd: SWAP_COOLDOWN }, smoke: { cd: SMOKE_COOLDOWN }, pong: { cd: PONG_COOLDOWN }, mines: { cd: MINE_COOLDOWN }, split: { cd: SPLIT_COOLDOWN}, accelerator: { cd: ACCELERATOR_COOLDOWN }, builder: { cd: BUILDER_COOLDOWN }, fighter: { cd: FIGHTER_COOLDOWN} }; // (cd here is the largest possible cooldown: the HUD tint is shown as a share of it)
+const ABILITY = { dash: { cast: DASH_CAST, cd: DASH_COOLDOWN }, plinko: { cast: PLINKO_CAST, cd: PLINKO_COOLDOWN }, marionette: { cd: MARIONETTE_COOLDOWN }, decoy: { cast: DECOY_CAST, cd: DECOY_COOLDOWN }, arrow: { cd: ARROW_COOLDOWN }, bat: { cd: BAT_COOLDOWN }, barbwire: { cd: BARBWIRE_MAX_T * BARBWIRE_CD_RATIO }, warp: { cd: WARP_COOLDOWN }, awakened: { cd: AWAKENED_COOLDOWN }, explode: { cd: EXPLODE_COOLDOWN }, hopper: { cd: HOPPER_COOLDOWN }, boomerang: { cd: BOOMERANG_COOLDOWN }, portal: { cd: PORTAL_COOLDOWN }, swap: { cd: SWAP_COOLDOWN }, smoke: { cd: SMOKE_COOLDOWN }, pong: { cd: PONG_COOLDOWN }, mines: { cd: MINE_COOLDOWN }, split: { cd: SPLIT_COOLDOWN}, accelerator: { cd: ACCELERATOR_COOLDOWN }, builder: { cd: BUILDER_COOLDOWN }, fighter: { cd: FIGHTER_COOLDOWN}, reel: { cd: REEL_COOLDOWN } }; // (cd here is the largest possible cooldown: the HUD tint is shown as a share of it)
 
 // =====================================================================================================================================================================
 // 11  MATCH

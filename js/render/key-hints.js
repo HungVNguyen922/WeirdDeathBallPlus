@@ -174,6 +174,16 @@ function iconGlyph(kind, x, y, color) { // little icons: grapple hook, kettlebel
       cx.lineWidth = 2;
       cx.strokeRect(-9, -2, 10, 10);
       cx.beginPath(); cx.moveTo(1, 8); cx.lineTo(9, 8); cx.lineTo(1, -2); cx.closePath(); cx.stroke();
+    } else if (kind === 'reel') { // a fishing rod, its reel, and the line down to a hook
+        cx.lineWidth = 2.2;
+        cx.moveTo(-9, 9); cx.lineTo(8, -8);                       // the rod
+        cx.moveTo(-2, 2); cx.lineTo(0.5, 4.5);                    // the reel's mount
+        cx.moveTo(8, -8); cx.lineTo(8, 2);                        // the line
+        cx.arc(6, 2, 2, 0, Math.PI * 0.9);                        // the hook
+        cx.stroke();
+        cx.beginPath(); cx.lineWidth = 1.9;
+        cx.arc(2, 6, 3.6, 0, 7); cx.stroke();                     // the reel body
+        cx.beginPath(); cx.arc(2, 6, 1.2, 0, 7); cx.fill();       // its hub
     } else if (kind === 'locked') { // padlock
         cx.fillRect(-6, -1, 12, 9);
         cx.beginPath(); cx.arc(0, -2, 4.5, Math.PI, 0); cx.stroke();

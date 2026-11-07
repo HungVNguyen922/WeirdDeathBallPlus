@@ -102,6 +102,7 @@ function drawCasts() { // abilities being cast: ghost pegs / decoys, marionette 
             cx.beginPath(); cx.moveTo(t1x, t1y); cx.lineTo(tx, ty); cx.lineTo(t2x, t2y); cx.stroke();
             cx.restore();
             arrowShape(hx, hy, c.ang, len, col, full ? 0.7 + 0.3 * pulse : 1);
+        } else if (cast.type === 'reel') { // drawn by drawReelFx() (render/reel.js), after the ropes
         } else if (cast.type === 'barbwire') { // time left on the wire: a ring that only shows (and only drains) while the rope is out, turning red when nearly spent
             const left = 1 - Math.min(1, cast.roped / BARBWIRE_MAX_T);
             if (ropeEnd(p))

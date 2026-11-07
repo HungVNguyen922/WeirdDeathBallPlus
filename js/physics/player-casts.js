@@ -74,6 +74,8 @@ mixin(Player, {
                 buildBlock(this, hx, hy, !!k.x);
                 return true;
             }
+        } else if (id === 'reel') {
+            c = this.reelStart(!!k.x);
         } else if (id === 'warp') { // instant: no cast, no timer (see warpPress)
             this.warpPress();
             return true;
@@ -146,6 +148,8 @@ mixin(Player, {
             c.t -= DT;
             if (Math.hypot(this.x - c.x, this.y - (c.y + mineLift(c))) > MINE_LEASH)
                 this.endCast(c);
+        } else if (c.type === 'reel') {
+            this.reelStep(c, k);
         } else
             c.t -= DT;
         if (this.casts.includes(c) && c.t <= 0) {

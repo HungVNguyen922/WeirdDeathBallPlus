@@ -172,7 +172,8 @@ PROJ_TYPES.arrow = {
     sub(a) {
         arrowPegBounce(a);
         arrowBumpPlayers(a);
-        if (!a.spent && arrowStrike(a)) { // one hit: bounces off limp and keeps falling
+        const hitBlock = arrowVsBlocks(a); // a live arrow reaching a block pushes it and is used up; a spent one just bounces off
+        if (!a.spent && (hitBlock || arrowStrike(a))) { // one hit: bounces off limp and keeps falling
             arrowBumpPlayers(a);
             a.spent = true;
             a.vx *= -ARROW_SPENT_K;

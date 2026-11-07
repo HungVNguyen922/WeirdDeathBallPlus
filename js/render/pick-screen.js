@@ -23,6 +23,7 @@ const PICK_DESC = { // two short lines under the highlighted special
     split: ['Halve yourself, leave a copy.', 'Touch a copy to merge back.', 'Weight + key: swap bodies.'],
     builder: ['Press to drop a block where you', 'stand. Hold special + weight:', 'remove the block you last placed.'],
     fighter: ['Takes both slots. P / K buttons,', 'motion inputs like 236 + a button.'], 
+    reel: ['Hold special + weight to pull', 'yourself toward your grapple.'],
 };
 const pickSp = id => SPECIALS.find(a => a.id === id) || SPECIALS[0];
 const PICK_NAMES = ['BLUE', 'RED', 'BLUE 2', 'RED 2']; // by player id

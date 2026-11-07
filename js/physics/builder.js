@@ -164,7 +164,7 @@ function buildBlock(p, hx, hy, tri) {
         removeBlock(mine.shift()); // the oldest goes
     // tm / ti: its mass and inertia as the GRAPPLE code sees them (the same units as BALL_TM / BALL_I; a block weighs as much as the death ball)
     spawnProjectile('block', p, x, y, p.vx * BUILDER_INHERIT, p.vy * BUILDER_INHERIT, { // it is thrown with your momentum
-        pts, r: bound, th: 0, w: 0, k2: sh.k2, tm: BALL_TM, ti: BALL_TM * sh.k2, age: 0, hitV: 0, stress: 0, rest: 0, broken: 0, lastGrab: -1, shape: kind + (tri ? 'T' : '') });
+        pts, r: bound, th: 0, w: 0, k2: sh.k2, tm: BALL_TM, ti: BALL_TM * sh.k2, age: 0, hitV: 0, stress: 0, rest: 0, broken: 0, lastGrab: -1, shape: kind + (tri ? 'T' : ''), dur: kind === 'UD' || (kind === 'N' && tri) ? BUILDER_DUR_BIG : 1 }); // dur: 2:1 shapes (slab, tall slab, oval) are sturdier
     p.cd.builder = BUILDER_COOLDOWN;
     return true;
 }
@@ -242,8 +242,11 @@ function bkVsCircle(k, c, mc, e, mu) {
     k.y -= h.ny * h.pen * mc / tm;
     c.x += h.nx * h.pen * BUILDER_M / tm;
     c.y += h.ny * h.pen * BUILDER_M / tm;
+    const kvn0 = k.vx * h.nx + k.vy * h.ny, cvn0 = c.vx * h.nx + c.vy * h.ny; // before the impulse: each one's speed along the contact line (it points from the block to c)
+    const together = c instanceof Player && kvn0 * cvn0 > 0 && Math.min(Math.abs(kvn0), Math.abs(cvn0)) > BUILDER_PUSH_MIN_V; // both going the same way: a push, not a crash
     const cv = bkImpulse(k, c, 1 / mc, h.nx, h.ny, c.x - h.nx * (c.r - h.pen), c.y - h.ny * (c.r - h.pen), e, mu);
-    k.hitV = Math.max(k.hitV, cv * (c.crashK || 1)); // (Awakened players hit harder)
+    if (!together) // (a block and a player moving the same way just push each other: no break)
+        k.hitV = Math.max(k.hitV, cv * (c.crashK || 1)); // (Awakened players hit harder)
     return h;
 }
 function bkSupport(P, nx, ny) { // the corners of P that reach furthest along -n, i.e. the lowest along n
@@ -280,7 +283,7 @@ function blocksVsPlayer(p) {
 }
 
 PROJ_TYPES.block = {
-    r: BUILDER_SIZE, life: BUILDER_LIFE, g: BUILDER_G, // (r here is only the default: every block carries its own bounding radius)
+    r: BUILDER_SIZE, life: BUILDER_LIFE, g: BUILDER_G, swappable: true, // (r here is only the default: every block carries its own bounding radius)
     steer(b) {
         if (b.broken || b.life < 2 * DT || b.x < -OUT_D || b.x > W + OUT_D || b.y > H + PIT) { // broken, timed out or fell out of the world
             builderRelease(b);
@@ -320,15 +323,17 @@ PROJ_TYPES.block = {
         for (const k of projectiles)
             if (k.type === 'block' && k !== b && !k.broken)
                 bkPair(b, k);
+        for (const q of pegs)
+            blockPegBounce(b, q); // plinko pegs bounce a block like they bounce the ball
     },
     after(b) { // once per tick: settle when at rest, then break if something hit hard enough (players hit it earlier this tick, in stepCollide)
         if (b.rest) {
             if (b.rest >= 2 && Math.hypot(b.vx, b.vy) < 8 && Math.abs(b.w) < 0.25) { b.vx = 0; b.vy = 0; b.w = 0; } // lying still: stop the tiny jitter
             b.rest = 0;
         }
-        if (b.age > BUILDER_GRACE && b.hitV > BUILDER_BREAK_V)
+        if (b.age > BUILDER_GRACE && b.hitV > BUILDER_BREAK_V * (b.dur || 1))
             breakBlock(b);
-        b.stress = Math.max((b.stress || 0) * 0.92, Math.min(1, b.hitV / BUILDER_BREAK_V)); // display only: how close it came
+        b.stress = Math.max((b.stress || 0) * 0.92, Math.min(1, b.hitV / (BUILDER_BREAK_V * (b.dur || 1)))); // display only: how close it came
         b.hitV = 0;
     },
 };

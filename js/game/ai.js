@@ -28,21 +28,30 @@ const AI_RESCUE_HOLDS = [0.15, 0.35, 0.7]; // how long (s) a rescue grab holds o
 const AI_RESCUE_STYLES = [2, 4, 0];      // grapple-jump tap counts the rescue search tries
 const AI_RESCUE_AFTER = 120;             // steps played after the release to see whether the ball still gets in
 const AI_RESCUE_MARGIN = 1;              // a rescue grab only has to keep this many u clear of touching the ball (the normal search wants a 36 u gap); it must never touch
-const AI_DASH_USE = 0.2;                 // chance that a latch is allowed to use the dash shot at all (0 = never dashes, 1 = old behaviour). The rest of the time it shoots with the rope alone.
+const AI_DASH_USE = 0.6;                 // chance that a latch is allowed to use the dash shot at all (0 = never dashes, 1 = old behaviour). The rest of the time it shoots with the rope alone.
 const AI_THREAT = 50; // dodge when the ball would get this close (u; touching is 30)
+const AI_SPECIALS = true;                  // false = the AI only ever uses Dash, like before
+const AI_SPECIAL_POOL = ['dash', 'plinko', 'marionette', 'decoy', 'arrow'];
+const AI_LOW = true;                       // low-to-ground style
+const AI_ALT_SOFT = H * 0.45, AI_ALT_PEN = 0.06; // held plans lose points for flying above this height
+const AI_CONTEST = true;                   // move to meet a shot instead of waiting at the midline
+const AI_AWAY = true;                      // 1v1: crash an enemy while across the net, otherwise get home
+const AI_LOOP_DASH = true;                 // dash mid-loop to keep the orbit fast
 const ai = [0, 1, 2, 3].map(() => ({ on: false, plan: null, t: 0, age: 0, noGrab: 0, held: false, rescueHold: null }));
-function aiReset(i) { // forget everything it was in the middle of (new round, or switched on / off)
-    Object.assign(ai[i], { plan: null, t: 0, age: 0, noGrab: 0, held: false, hs: null, E: null, job: null, cool: 0, jcool: 0, fails: 0, idle: 0, stand: undefined, threat: false, X: null, crossFail: 0, rescueHold: null, airT: 0, airOk: false, V: null, invCool: 0, invIdle: 0 });
+function aiReset(i) {
+    Object.assign(ai[i], { plan: null, t: 0, age: 0, noGrab: 0, held: false, hs: null, E: null, job: null, cool: 0, jcool: 0, fails: 0, idle: 0, stand: undefined, threat: false, X: null, crossFail: 0, rescueHold: null, airT: 0, airOk: false, V: null, invCool: 0, invIdle: 0, sp: null, spCool: 0, spT: 0, R: null, retCool: 0, retFail: 0 });
+    if (AI_SPECIALS && ai[i].on && !pickFixed)
+        allPlayers[i].special = aiPickSpecial(allPlayers[i]);
 }
-// The rollouts step real physics objects, which nudges a few shared effect values (seesaw, hatchet glow, peg flash). Snapshot and restore them.
-function snapshotFx() { return { sv: saw.v, st: saw.t, qf: { ...quakeFx }, hp: [...padFlash], pf: pegs.map(q => q.flash) }; }
+function aiPickSpecial(p) { return AI_SPECIALS ? AI_SPECIAL_POOL[Math.floor(Math.random() * AI_SPECIAL_POOL.length)] : 'dash'; }
+function snapshotFx() { return { sv: saw.v, st: saw.t, qf: { ...quakeFx }, hp: [...padFlash], pf: pegs.map(q => [q.flash, q.hits, q.nx, q.ny]) }; }
 function restoreFx(s) {
     saw.v = s.sv;
     saw.t = s.st;
     Object.assign(quakeFx, s.qf);
     padFlash[0] = s.hp[0];
     padFlash[1] = s.hp[1];
-    pegs.forEach((q, n) => { q.flash = s.pf[n]; });
+    pegs.forEach((q, n) => { if (s.pf[n]) [q.flash, q.hits, q.nx, q.ny] = s.pf[n]; });
 }
 function aiClone(p) {
     const c = Object.assign(Object.create(Player.prototype), p);
@@ -488,7 +497,7 @@ function aiDodge(me, b, lo, hi) {
     let best = null, bestD = -1;
     for (const dir of [0, -1, 1])
         for (const up of [false, true]) {
-            const d = aiPathMin(me, b, dir, up, lo, hi) + (dir === 0 && !up ? 4 : 0); // (a slight preference for doing nothing)
+            const d = aiPathMin(me, b, dir, up, lo, hi) + (dir === 0 ? 4 : 0) + (up || !AI_LOW ? 0 : 14);
             if (d > bestD) {
                 bestD = d;
                 best = { dir, up };
@@ -517,7 +526,7 @@ function aiAirGrabSafe(me) {
 }
 
 // ---- tactics ----
-const AI_GRIP_MIN = 1.6, AI_FLOAT_T = 0.8, AI_JUMP_HOLD = 0.6, AI_STAND = 90, AI_STANDS = [90, 130, 70, 160, 110], AI_HOLD_MAX = 1.6;
+const AI_GRIP_MIN = 1.6, AI_FLOAT_T = 0.5, AI_JUMP_HOLD = 0.6, AI_STAND = 90, AI_STANDS = [90, 130, 70, 160, 110], AI_HOLD_MAX = 1.6;
 const AI_SLICE = 96, AI_PRE = 8;          // jump jobs: physics steps per tick, and the ticks of latency they plan around
 const AI_SLICE_H = 48, AI_PRE_H = 24;      // held-plan jobs: bigger, because they must finish within their latency window (AI_PRE_H ticks) to be about the moment they land
 const AI_JUMP_STEPS = 180, AI_SAFE_STEPS = 84, AI_HELD_STEPS = 96, AI_AFTER_STEPS = 72, AI_LOOP_STEPS = 180, AI_LOOP_MAX = 2.4, AI_STALL_MAX = 2.2; // look-ahead lengths (steps): a jump, the safe time after latching, a held plan, the time after a release
@@ -554,6 +563,11 @@ function aiHeldKeys(me, b, hs, k) {
         k.up = plan === 'shootU';
         k.r = s > 0;
         k.l = s < 0;
+        hs.dashT = hs.t;
+    }
+    else if (AI_LOOP_DASH && loop && hs.dashT === null && hs.t >= 0.3 && aiCanDash(me, hs)) { // dash along the orbit's tangent to keep the loop fast
+        const rx = me.x - tb.x, ry = me.y - tb.y, d = Math.hypot(rx, ry) || 1, sp = plan === 'loopO' ? s : -s, tx = sp * -ry / d, ty = sp * rx / d;
+        k.sp = true; k.r = tx > 0.3; k.l = tx < -0.3; k.up = ty < -0.3; k.dn = ty > 0.3;
         hs.dashT = hs.t;
     }
     if ((shoot || loop) && hs.n % 2 === 0 && (hs.dashT !== null ? hs.t - hs.dashT > 0.14 : hs.t > (loop ? 0.35 : 0.4)) && (aiFlight(tb, me.team) || aiBallHit(tb, me) >= AI_HIT_MIN))
@@ -888,6 +902,7 @@ function* aiHeldJob(me0, hs0, out) { // the best held plan from here (after the 
             v -= (44 - minD) * 8;
         if (minY < AI_CEIL_MARGIN)
             v -= (AI_CEIL_MARGIN - minY) * AI_CEIL_PEN; // a plan that flings us up into the ceiling (fast ball + rope) ends with us and the ball in the same corner
+        if (AI_LOW && minY < AI_ALT_SOFT) v -= (AI_ALT_SOFT - minY) * AI_ALT_PEN; // stay low: coming down from a high float is where shots get through
         v += plan === hs0.plan ? 6 : 0;        // keep the current plan unless another is clearly better
         if (v > bestV) {
             bestV = v;
@@ -905,10 +920,258 @@ function aiAdvance(A) { // run one slice of the current job
         A.job.done = true;
 }
 
+// ================= SPECIALS =================
+const aiGoalSign = me => (aiLeft(me.team) ? 1 : -1); // the goal we attack: +1 = right
+function aiBallAt(n, body = ball) { // where the free body will be n ticks from now (real-physics forecast)
+    const f = aiForecast(body);
+    if (!f.path.length)
+        return { x: body.x + body.vx * n * DT, y: body.y + body.vy * n * DT };
+    return f.path[Math.max(0, Math.min(f.path.length - 1, aiTickN - f.stamp + n - 1))];
+}
+// Value of a ball future: advance the ball `delay` ticks, add a kick (kx, ky), play on. +260 kills an enemy, +300 scores for us, -400 scores on us, -1000 kills us, 0 nothing happens.
+function aiPushValue(me, b0, delay, kx, ky, cancel) {
+    const fx = snapshotFx(), atk = aiGoalSign(me), b = Object.assign(new Ball(), b0), self = aiEnemySnap(me);
+    const foes = players.filter(q => q.team !== me.team && q.alive).map(aiEnemySnap);
+    let v = 0;
+    for (let n = 0; n < 150 + delay; n++) {
+        if (n === delay && (kx || ky)) {
+            if (cancel) { const m = Math.hypot(kx, ky), ux = kx / m, uy = ky / m; if (ux && b.vx * ux < 0) b.vx = 0; if (uy && b.vy * uy < 0) b.vy = 0; } // (marionette cancels motion against the shove)
+            b.vx += kx;
+            b.vy += ky;
+            const s = Math.hypot(b.vx, b.vy);
+            if (s > BALL_VMAX) b.boost = Math.max(b.boost, Math.min(1, (s - BALL_VMAX) / (PAD_MAX - BALL_VMAX)));
+        }
+        const sc = b.step();
+        aiEnemyStep(self);
+        for (const e of foes) aiEnemyStep(e);
+        if (Math.hypot(b.x - self.x, b.y - self.y) < self.r + b.r) { v = -1000; break; }
+        if (foes.some(e => Math.hypot(b.x - e.x, b.y - e.y) < e.r + b.r)) { v = 260 - n * 0.4; break; }
+        if (sc !== null || aiInGoal(b)) { v = (b.x < W / 2 ? -1 : 1) === atk ? 300 - n * 0.4 : -400; break; }
+    }
+    restoreFx(fx);
+    return v;
+}
+
+function aiPegHelps(me, x, y) { // does a peg at (x, y) stop a shot that would score on us?
+    const threat = -aiGoalSign(me), fx = snapshotFx();
+    if (aiRollEnd(ball).end !== threat) return false;
+    pegs.push({ x, y, vx: 0, vy: 0, r: PEG_R, team: me.team, owner: me, flash: 0, life: PEG_LIFE });
+    const after = aiRollEnd(ball).end;
+    pegs.pop();
+    restoreFx(fx);
+    return after !== threat;
+}
+
+// ---- MARIONETTE: shove the ball the way a rollout says is best (kill a holder, reverse a jumper's ball into their goal, deny a shot) ----
+const AI_MARIO_DIRS = [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]];
+function aiSpMarionette(me, A, k) {
+    if (me.cd.marionette > 0 || me.onBall || me.rope || me.pending)
+        return;
+    if (players.some(q => q !== me && q.team === me.team && q.alive && q.onBall && q.tball === ball))
+        return; // a teammate has it
+    const foes = players.filter(q => q.team !== me.team && q.alive);
+    const holder = foes.some(q => q.onBall && q.tball === ball), near = foes.some(q => Math.hypot(q.x - ball.x, q.y - ball.y) < 380), threat = aiForecast(ball).end === -aiGoalSign(me);
+    if (!holder && !near && !threat)
+        return; // (the rollouts are not free: only look when something is going on)
+    const v0 = aiPushValue(me, ball, 0, 0, 0, false);
+    let best = null;
+    for (const [dx, dy] of AI_MARIO_DIRS) {
+        if (me.ground && dy < 0) continue; // an up arrow on the floor would also jump
+        const m = Math.hypot(dx, dy), v = aiPushValue(me, ball, 2, dx / m * MARIONETTE_V, dy / m * MARIONETTE_V, true);
+        if (!best || v > best.v) best = { v, dx, dy };
+    }
+    if (best && best.v >= 200 && best.v - v0 >= 400 && best.v > 100) {
+        k.sp = true;
+        k.l = best.dx < 0; k.r = best.dx > 0; k.up = best.dy < 0; k.dn = best.dy > 0;
+        A.sp = { id: 'mario', dx: best.dx, dy: best.dy }; // next tick: let go with the arrows still held = fire
+    }
+}
+
+// ---- ARROW ----
+function aiArrowAng(me, S, charge) {
+    const V = ARROW_V_MIN + (ARROW_V_MAX - ARROW_V_MIN) * charge, T = S.kind === 'ball' ? ball : S.foe;
+    let t = Math.hypot(T.x - me.x, T.y - me.y) / V, px = T.x, py = T.y;
+    for (let i = 0; i < 2; i++) {
+        if (S.kind === 'ball') { const p = aiBallAt(Math.round(t * 120)); px = p.x; py = p.y; }
+        else { px = T.x + T.vx * t; py = T.y + T.vy * t + (T.ground ? 0 : 0.5 * G * t * t); }
+        t = Math.hypot(px - me.x, py - me.y) / V;
+    }
+    return Math.atan2(py - 0.5 * ARROW_G * t * t - me.y, px - me.x); // aim high by the drop
+}
+function aiArrowPlan(me) {
+    const dist = Math.hypot(ball.x - me.x, ball.y - me.y);
+    if (dist < 1000) { // shoot the death ball when a rollout says it saves a goal or scores one
+        const S = { kind: 'ball' }, ch = 0.8, V = ARROW_V_MIN + (ARROW_V_MAX - ARROW_V_MIN) * ch, n = Math.round(dist / V * 120), ang = aiArrowAng(me, S, ch);
+        const v = aiPushValue(me, ball, n, Math.cos(ang) * V * ARROW_BALL_K, Math.sin(ang) * V * ARROW_BALL_K, false), v0 = aiPushValue(me, ball, 0, 0, 0, false);
+        if (v >= v0 + 150 && v > -100)
+            return { kind: 'ball', charge: ch };
+    }
+    let best = null, bd = 900; // cover fire: an enemy in the air, or one holding the ball (setting up a shot)
+    for (const e of players)
+        if (e.team !== me.team && e.alive && (!e.ground || e.onBall)) {
+            const d = Math.hypot(e.x - me.x, e.y - me.y);
+            if (d < bd) { bd = d; best = e; }
+        }
+    return best ? { kind: 'foe', foe: best, charge: 0.6 } : null;
+}
+function aiSpArrow(me, A, k) {
+    if (me.cd.arrow > 0 || me.onBall || me.rope || me.pending || me.casts.length)
+        return;
+    if (Math.hypot(ball.x - me.x, ball.y - me.y) < 160 || aiPathMin(me, ball, 0, false, me.r, W - me.r) < AI_THREAT * 2)
+        return; // aiming roots us to the spot: never with the death ball about to arrive
+    const plan = aiArrowPlan(me);
+    if (plan) { k.sp = true; A.sp = { id: 'arrow', t: 0, ...plan }; }
+}
+function aiArrowRun(me, A, k, S) {
+    S.t += DT;
+    const c = me.casting('arrow');
+    if (!c || (S.kind === 'foe' && !S.foe.alive) || S.t > 2.2) { A.sp = null; A.spCool = 0.5; return; }
+    const diff = wrapAng(aiArrowAng(me, S, S.charge) - c.ang), danger = !!aiDodge(me, ball, me.r, W - me.r);
+    k.l = diff < -0.06; k.r = diff > 0.06; k.up = false; k.dn = false; // (RIGHT turns clockwise; a deadband avoids double taps, which would snap the aim)
+    k.sp = true;
+    if (danger || (c.charge >= S.charge && Math.abs(diff) < 0.08)) { // fire
+        k.sp = false;
+        A.sp = null;
+        A.spCool = 0.3;
+    }
+}
+
+// ---- PLINKO: a peg in the way of a shot (and step out of it), or a wall of pegs in front of our goal ----
+const aiPlinkoWant = me => pegs.filter(q => q.owner === me).length < PEG_MAX && ((ball.x - NETX) * aiSide(me) >= 40 || players.some(q => q.team !== me.team && q.alive && q.onBall));
+const aiPlinkoSpot = me => { const off = RUN + PL * (pegs.filter(q => q.owner === me).length ? 3.2 : 1.4); return aiLeft(me.team) ? off : W - off; };
+const aiWaitX = me => (AI_SPECIALS && me.has('plinko') && me.cd.plinko <= 0 && aiPlinkoWant(me) ? aiPlinkoSpot(me) : aiMid(me));
+function aiSpPlinko(me, A, k) {
+    if (me.cd.plinko > 0 || me.onBall || me.casts.length)
+        return;
+    const f = aiForecast(ball), off = Math.max(0, aiTickN - f.stamp);
+    if (f.path.length && (f.end === -aiGoalSign(me) || aiDodge(me, ball, me.r, W - me.r))) {
+        let close = 1e9, at = null, when = 0;
+        for (let n = off; n < Math.min(f.path.length, off + 100); n++) {
+            const d = Math.hypot(f.path[n].x - me.x, f.path[n].y - me.y);
+            if (d < close) { close = d; at = f.path[n]; when = n - off; }
+        }
+        if (at && close < 70 && when > 15) { // it passes right by us: peg goes where we stand, we get pushed out along the arrows (away from the ball)
+            const ux = me.x - at.x, uy = me.y - at.y, m = Math.hypot(ux, uy) || 1;
+            k.l = ux / m < -0.38; k.r = ux / m > 0.38; k.up = uy / m < -0.38; k.dn = uy / m > 0.38 && !me.ground;
+            if (!k.l && !k.r && !k.up && !k.dn) k.up = true;
+            k.sp = true;
+            A.spCool = 0.4;
+            return;
+        }
+    }
+    if (me.ground && Math.abs(me.x - aiPlinkoSpot(me)) < 16 && aiPlinkoWant(me)) {
+        k.sp = true;
+        A.spCool = 0.5;
+    }
+}
+
+// ---- DECOY: constant pressure on whoever is near ----
+function aiSpDecoy(me, A, k) {
+    if (me.cd.decoy > 0 || me.onBall || me.casts.length || !me.ground)
+        return;
+    if (aiForecast(ball).end === -aiGoalSign(me) || aiPathMin(me, ball, 0, false, me.r, W - me.r) < AI_THREAT * 2)
+        return; // defend first
+    let foe = null, fd = 1e9;
+    for (const q of players)
+        if (q.team !== me.team && q.alive) { const d = Math.hypot(q.x - me.x, q.y - me.y); if (d < fd) { fd = d; foe = q; } }
+    if (!foe || !(fd < 420 || (foe.onBall && fd < 800)))
+        return;
+    const mine = decoys.find(d => d.owner === me);
+    if (mine && Math.hypot(mine.x - foe.x, mine.y - foe.y) < 300)
+        return; // the one we have is already on them
+    k.sp = true;
+    A.spCool = 1;
+}
+
+// ---- DASH (the loop dash is in aiHeldKeys): get back to a slow, far-away ball quickly ----
+function aiSpDash(me, A, k) {
+    if (!me.dashReady || me.cd.dash > 0 || me.onBall || me.casts.length || !me.ground || !aiCanGrip(me))
+        return;
+    const b = AIB, dx = b.x - me.x;
+    if ((b.x - NETX) * aiSide(me) >= 40 || Math.abs(dx) < 650 || Math.hypot(b.vx, b.vy) > 200)
+        return;
+    k.sp = true; k.r = dx > 0; k.l = dx < 0; k.up = false; k.dn = false;
+    A.spCool = 1;
+}
+
+function aiSpecialRun(me, A, k) {
+    const S = A.sp;
+    if (S.id === 'mario') { // let go with the arrows still held: the shove fires
+        k.l = S.dx < 0; k.r = S.dx > 0; k.up = S.dy < 0; k.dn = S.dy > 0; k.sp = false;
+        A.sp = null;
+        A.spCool = 0.4;
+    } else if (S.id === 'arrow')
+        aiArrowRun(me, A, k, S);
+    else
+        A.sp = null;
+}
+function aiSpecial(me, A, k) {
+    A.spCool = Math.max(0, (A.spCool || 0) - DT);
+    if (me.stunT > 0) { A.sp = null; return; }
+    if (A.sp) { aiSpecialRun(me, A, k); return; }
+    const busy = A.E || A.X || A.V; // a committed jump is in flight; a look-ahead is not
+    if (A.spCool > 0 || busy || (A.spT = (A.spT || 0) - 1) > 0)
+        return;
+
+    A.spT = 2;
+
+    const f = {
+        dash: aiSpDash,
+        plinko: aiSpPlinko,
+        marionette: aiSpMarionette,
+        decoy: aiSpDecoy,
+        arrow: aiSpArrow
+    }[me.slots()[0][1]];
+
+    if (f) {
+        const before = A.sp;
+        f(me, A, k);
+        if (A.sp !== before || k.sp)
+            A.job = null; // a special was started: drop the look-ahead
+    }
+}
+
+// ---- RETREAT: get back over the net (a grapple jump up through the gap), planned by look-ahead like the other jumps ----
+function aiRetreatKeys(me, R, k) {
+    const s = aiSide(me), ours = s > 0 ? 'l' : 'r', theirs = s > 0 ? 'r' : 'l';
+    if (!me.ground && R.j === 0) { k.up = true; k[ours] = true; R.t += DT; return; } // already in the air: float home
+    if (R.j === 0 && Math.abs(me.x - NETX) < R.run) { k[theirs] = true; R.t += DT; return; } // room for the jump (the net would be the nearest thing to grapple)
+    R.j += DT;
+    const jt = R.j, taps = R.taps;
+    k.up = jt < Math.max(AI_JUMP_HOLD, taps * AI_TAP_T + 0.55);
+    if (taps) {
+        const i = Math.floor(jt / AI_TAP_T);
+        k.z = i < taps && jt - i * AI_TAP_T < AI_TAP_ON;
+        k.x = jt < taps * AI_TAP_T;
+    }
+    k[ours] = true;
+}
+function* aiRetreatJob(me0, frozen, out) {
+    const S = aiSimNew(me0), s = aiSide(me0);
+    let n = 0;
+    for (let i = 0; i < AI_PRE; i++) { aiSimStep(S, frozen); if (aiDead(S)) return; }
+    for (const run of [0, 70, 140]) for (const taps of [3, 2, 4, 6]) {
+        const V = aiSimFork(S), R = { t: 0, j: 0, taps, run };
+        for (let i = 0; i < 360; i++) {
+            const k = aiNoKeys();
+            aiRetreatKeys(V.me, R, k);
+            const sc = aiSimStep(V, k);
+            if (aiDead(V) || (sc !== null && sc !== V.me.team))
+                break;
+            if (R.j > 0.4 && V.me.ground) {
+                if ((V.me.x - NETX) * s < -20) { out.ok = true; out.taps = taps; out.run = run; return; }
+                break;
+            }
+            if (++n % AI_SLICE === 0)
+                yield;
+        }
+    }
+}
+
 function aiFree(i, me, A, k) { // keys for an AI that is not tethered
     const s = aiSide(me), b = AIB, dx = b.x - me.x, away = (me.x - NETX) * s > 0; // away: we are over the net, on their half (a dash shot carries us there)
     const left = aiLeft(me.team), lo = left || away ? me.r : NETX + me.r, hi = left && !away ? NETX - me.r : W - me.r; // the room to dodge in: our half, or the whole arena when we are on theirs (the dodge model clamps to it, so a clamp to the wrong half 'teleports' us to the net and hides the ball)
-    const mine = (b.x - NETX) * s < 40;        // the ball is on our half (or right at the net)
+    const mine = (b.x - NETX) * s < 40 || (away && Math.abs(b.x - me.x) < 450);        // the ball is on our half (or right at the net)
     if (A.E) {                                 // in an engage jump: carry it out
         aiEngageKeys(me, b, A.E, k);
         if (me.ground && A.E.t > 0.3) {
@@ -978,6 +1241,26 @@ function aiFree(i, me, A, k) { // keys for an AI that is not tethered
         }
         return;
     }
+    if (A.R) { // walking / jumping home
+        if (aiDodge(me, ball, lo, hi)) { A.R = null; A.retCool = 0.4; } // the death ball is on us: normal dodge logic
+        else {
+            aiRetreatKeys(me, A.R, k);
+            if (((me.x - NETX) * s < -20 && me.ground) || A.R.t + A.R.j > 4) { A.R = null; A.retCool = 1; A.retFail = 0; }
+            return;
+        }
+    }
+    if (A.job && A.job.kind === 'retreat') {
+        const J = A.job;
+        Object.assign(k, J.age < AI_PRE ? J.frozen : {});
+        if (!J.done) aiAdvance(A); else J.age++;
+        if (J.done && J.age >= AI_PRE) {
+            A.job = null;
+            if (J.out.ok) A.R = { t: 0, j: 0, taps: J.out.taps, run: J.out.run };
+            else { A.retFail = (A.retFail || 0) + 1; A.retCool = 0.3; A.R = A.retFail >= 2 ? { t: 0, j: 0, taps: 3, run: 70 } : null; }
+            if (A.R) aiRetreatKeys(me, A.R, k);
+        }
+        return;
+    }
     if (A.job && A.job.kind === 'jump') {      // a jump look-ahead is running (and maybe a scheduled jump after it)
         const J = A.job;
         Object.assign(k, J.age < AI_PRE ? J.frozen : {}); // what the look-ahead assumed: keep walking for AI_PRE ticks, then stand
@@ -1032,6 +1315,31 @@ function aiFree(i, me, A, k) { // keys for an AI that is not tethered
         }
         return;
     }
+    A.retCool = Math.max(0, (A.retCool || 0) - DT);
+    if (AI_AWAY && away) { // across the net: crash somebody if a look-ahead finds a hard hit, grab the ball if it is close, otherwise get home
+        const tgt = aiInvadeTarget(me, b);
+        if (me.ground && grip0 && tgt && A.invCool <= 0 && aiInvadeSafe(me)) {
+            A.out = {};
+            A.job = { kind: 'invade', gen: aiInvadeJob(me, aiNoKeys(), tgt, A.out), out: A.out, tgt, frozen: aiNoKeys(), age: 0, done: false };
+            Object.assign(k, aiNoKeys());
+            return;
+        }
+        const ballClose = grip0 && Math.hypot(b.x - me.x, b.y - me.y) < 380;
+        if (!ballClose && A.retCool <= 0) {
+            if (!me.ground) { A.R = { t: 0, j: 0, taps: 3, run: 0 }; aiRetreatKeys(me, A.R, k); return; }
+            A.out = {};
+            A.job = { kind: 'retreat', gen: aiRetreatJob(me, aiNoKeys(), A.out), out: A.out, frozen: aiNoKeys(), age: 0, done: false };
+            return;
+        }
+    } else if (AI_AWAY && !players.some(q => q !== me && q.team === me.team) && grip0 && me.ground && A.invCool <= 0 && aiInvadeSafe(me)) { // 1v1: an enemy holding the ball is busy: go and crash them
+        const tgt = aiInvadeTarget(me, b);
+        if (tgt && tgt.onBall) {
+            A.out = {};
+            A.job = { kind: 'invade', gen: aiInvadeJob(me, aiNoKeys(), tgt, A.out), out: A.out, tgt, frozen: aiNoKeys(), age: 0, done: false };
+            Object.assign(k, aiNoKeys());
+            return;
+        }
+    }
     // a shot coming at us: schedule a jump so that we are up over its path when it arrives
     const grip = aiCanGrip(me), arr = grip && me.ground && (A.cool <= 0 || b !== A.heldBody) && (A.jcool || 0) <= 0 ? aiArrival(me) : null; // (the sulking cooldown after a throw only applies to the body we just threw) // (no grip, no grab: with the grapple spent or locked out we only keep clear)
     const urgent = arr ? aiUrgent(me) : false; // a shot at our goal is worth a try even when it is nearly on us (a rescue grab only needs ~0.1 s of warning); otherwise a jump needs 0.3 s
@@ -1041,7 +1349,7 @@ function aiFree(i, me, A, k) { // keys for an AI that is not tethered
         const last = Math.round(arr.t * 120) + 6, delays = [...new Set([0, 6, 14, 24, 36, 50, 66].map(d => Math.max(AI_PRE, AI_PRE + d)).filter(d => d <= last))];
         if (!delays.length) delays.push(AI_PRE);
         A.out = {};
-        A.job = { kind: 'jump', gen: aiJumpJob(me, aiNoKeys(), delays, ['toward', 'none'], A.out, [2, 4, 0, 3, 6], false, urgent), out: A.out, frozen: aiNoKeys(), age: 0, done: false };
+        A.job = { kind: 'jump', gen: aiJumpJob(me, aiNoKeys(), delays, ['toward', 'none'], A.out, AI_LOW ? [0, 2, 3, 4, 6] : [2, 4, 0, 3, 6], false, urgent), out: A.out, frozen: aiNoKeys(), age: 0, done: false };
         return;
     }
     // the ball is behind us (between us and our own goal), slow and low: get round it first (see aiCrossJob). If crossing keeps failing, the normal approach below takes over.
@@ -1053,9 +1361,12 @@ function aiFree(i, me, A, k) { // keys for an AI that is not tethered
         A.job = { kind: 'cross', gen: aiCrossJob(me, aiNoKeys(), A.out), out: A.out, frozen: aiNoKeys(), age: 0, done: false };
         return;
     }
-    // the approach: run at the ball on the side we are already on, stopping a stand-off short of it (the jump check below picks the moment to go)
+    // the approach: run at the ball on t[2, 4, 0]he side we are already on, stopping a stand-off short of it (the jump check below picks the moment to go)
     let tx = null;
-    if (grip && mine && Math.abs(dx) < 500) {
+    if (AI_CONTEST && grip && mine && !arr && aiUrgent(me)) { // the ball is going in and no jump is planned: go and stand where it will be, do not wait on the midline
+        const f = aiForecast(), p = f.path.length ? f.path[Math.min(f.path.length - 1, Math.max(0, aiTickN - f.stamp) + 45)] : b;
+        tx = Math.max(lo, Math.min(hi, p.x + (me.x >= p.x ? 1 : -1) * (A.stand || AI_STAND)));
+    } else if (grip && mine && Math.abs(dx) < 500) {
         const side = me.x >= b.x ? 1 : -1, closing = -side * b.vx;
         const slow = Math.hypot(b.vx, b.vy) < 150 && me.ground; // a ball creeping along our floor (maybe towards our own goal): go right up to it and hop over it, do not hover at a safe stand-off while it trickles in
         tx = Math.max(lo, Math.min(hi, b.x + side * (slow ? 45 : (A.stand || AI_STAND))));
@@ -1078,7 +1389,7 @@ function aiFree(i, me, A, k) { // keys for an AI that is not tethered
     if (grip && mine && me.ground && A.cool <= 0 && A.jcool <= 0 && Math.hypot(dx, b.y - me.y) < 260) { // worth asking whether a jump latches (no longer waits for the dash to be ready: openings do not depend on it)
         if (Math.abs(dx) < 66) { k.l = k.r = false; }           // too close to keep running while we think
         A.out = {};
-        A.job = { kind: 'jump', gen: aiJumpJob(me, { ...k }, [AI_PRE], ['toward', 'none', 'away'], A.out, [2, 4, 0], true), out: A.out, frozen: { ...k }, age: 0, done: false };
+        A.job = { kind: 'jump', gen: aiJumpJob(me, { ...k }, [AI_PRE], ['toward', 'none', 'away'], A.out, AI_LOW ? [0, 2, 4] : [2, 4, 0], true), out: A.out, frozen: { ...k }, age: 0, done: false };
         return;
     }
     const dodge = aiDodge(me, ball, lo, hi);    // the DEATH ball is going to reach us: pick the steering that keeps us furthest from it (a decoy cannot kill us: never dodge one)
@@ -1166,5 +1477,6 @@ function aiDrive(i) {
         }
         aiFree(i, me, A, k);
     }
+    if (AI_SPECIALS) aiSpecial(me, A, k);
     Object.assign(me.keys, k);
 }

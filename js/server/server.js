@@ -56,7 +56,7 @@ const MAX_CATCHUP = 8; // never run more than this many ticks in one go (after a
 const MAX_ROOMS = +process.env.MAX_ROOMS || 50, MAX_SPECTATORS = 8, MSG_PER_SEC = 400; // MAX_ROOMS: each room is its own vm context, so size it to your RAM
 const CHAT_MAX = 120, CHAT_BURST = 5, CHAT_WINDOW_MS = 5000; // chat: longest message, and at most CHAT_BURST messages per CHAT_WINDOW_MS per player
 const TEAM_MAX = 2; // players per team (seats 0 / 2 are Blue, 1 / 3 are Red)
-const SPECIAL_IDS = ['dash', 'plinko', 'marionette', 'decoy', 'arrow', 'bat', 'barbwire', 'warp', 'awakened', 'explode', 'hopper', 'boomerang', 'portal', 'swap', 'smoke', 'pong', 'mines', 'split', 'accelerator', 'builder', 'fighter', ]; // the same ids as in render/special-menu.js and game/rules.js
+const SPECIAL_IDS = ['dash', 'plinko', 'marionette', 'decoy', 'arrow', 'bat', 'barbwire', 'warp', 'awakened', 'explode', 'hopper', 'boomerang', 'portal', 'swap', 'smoke', 'pong', 'mines', 'split', 'accelerator', 'builder', 'reel', 'fighter', ]; // the same ids as in render/special-menu.js and game/rules.js
 
 // Code that runs INSIDE a room's sandbox: it captures the game's events (the renderer's hooks) into a list, and applies input bits to a player's keys.
 const ROOM_PRELUDE = `

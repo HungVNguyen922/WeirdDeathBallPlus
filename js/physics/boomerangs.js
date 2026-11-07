@@ -96,6 +96,7 @@ function boomBump(b) {
     boomHit(b, ball, BALL_M);
     for (const d of decoys)
         boomHit(b, d, BALL_M);
+    boomBlocks(b);
 }
 
 PROJ_TYPES.boomerang = {

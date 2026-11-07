@@ -72,6 +72,8 @@ mixin(Player, {
                 blast(d);
         for (const a of projOf('arrow'))
             blast(a);
+        for (const k of projOf('block'))
+            blast(k); // the Builder's blocks are shoved like the death ball
     },
     // A death happened within the window: the cooldown is refunded (and, if EXPLODE_CARRY, kept through the round reset that a kill ending the round is followed by).
     explodeRefund() {

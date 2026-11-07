@@ -17,7 +17,7 @@ const SIM_FILES = [ // same order as index.html's <script> tags, minus everythin
     'js/physics/constants.js', 'js/physics/terrain.js', 'js/physics/collision.js', 'js/physics/ball.js',
     'js/physics/bat.js', 'js/physics/player.js', 'js/physics/player-grapple.js', 'js/physics/player-collide.js', 'js/physics/player-casts.js', 'js/physics/player-specials.js', 'js/physics/player-hopper.js',
     'js/physics/bodies.js', 'js/physics/projectiles.js', 'js/physics/arrows.js', 'js/physics/boomerangs.js', 'js/physics/portals.js', 'js/physics/swap.js', 'js/physics/mines.js', 'js/physics/split.js', 'js/physics/fighter.js', 
-    'js/physics/statics.js', 'js/physics/accelerator.js', 'js/physics/builder.js', 
+    'js/physics/statics.js', 'js/physics/accelerator.js', 'js/physics/builder.js', 'js/physics/block-interactions.js', 'js/physics/reel.js',
     'js/game/rules.js', 'js/game/simstate.js', 'js/game/ai.js',
 ];
 
