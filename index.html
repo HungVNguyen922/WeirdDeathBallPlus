@@ -94,6 +94,11 @@
         <div class="row">
             <button id="online" class="mode" title="Play online: asks for a room name; a friend joins the same room">Online: Off</button>
         </div>
+            <div class="group" id="p2pgroup">
+                <h3>Host or join without the server</h3>
+                <div id="p2p"></div>
+                <p class="hint">Peer-to-peer: one player's browser runs the match and everyone connects straight to it. Only the short handshake for room codes goes through the game server.</p>
+            </div>
         <p class="hint">Connection status shows on the floor, under the score.</p>
     </div>
     <p class="hint">Click the game once so it gets keyboard focus.</p>
@@ -220,6 +225,7 @@
 <script src="js/net/account.js"></script>
 <script src="js/net/client.js"></script>
 <script src="js/net/predict.js"></script>
+<script src="js/host/host.js"></script>
 <script src="js/touch.js"></script>
 <script src="js/chat.js"></script>
 <script src="js/menu.js"></script>

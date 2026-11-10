@@ -95,23 +95,23 @@ const net = {
         const who = this.slot >= 0 ? 'you are ' + (team === 0 ? 'Blue' : 'Red') + (nth > 0 ? ' ' + (nth + 1) : '') : 'spectating';
         const seated = this.members.filter(m => m.slot >= 0).length;
         const state = !this.running ? (this.lobby2v2 ? ` - 2v2 lobby: waiting for players (${seated}/4)...` : this.slot >= 0 ? ' - waiting for an opponent...' : ' - waiting for players...') : '';
-        return `Online${this.ranked ? ' (ranked)' : ''}, room "${this.room}": ${who}${state}${this.rtt ? ` (ping ${Math.round(this.rtt)} ms${this.tps ? `, server ${this.tps} ticks/s` : ''}${this.extra ? ', ' + this.extra() : ''}, buffer ${Math.round(this.delayMs)} ms)` : ''}`;
+        return `Online${this.ranked ? ' (ranked)' : ''}${this.p2p ? ' (peer-to-peer)' : ''}, room "${this.room}": ${who}${state}${this.rtt ? ` (ping ${Math.round(this.rtt)} ms${this.tps ? `, server ${this.tps} ticks/s` : ''}${this.extra ? ', ' + this.extra() : ''}, buffer ${Math.round(this.delayMs)} ms)` : ''}`;
     },
-    join(room, server) {
+    join(room, server, socket) {
         if (this.ws)
             return;
         netClearAI();
         this.on = true;
         this.room = room;
-        const url = server || netServerUrl();
+        const url = server || (socket ? 'the host' : netServerUrl());
         this.setStatus('Connecting to ' + url + '...');
-        const ws = this.ws = new WebSocket(url);
+        const ws = this.ws = socket || new WebSocket(url);
         ws.onopen = () => {
             const want2v2 = typeof location !== 'undefined' && new URLSearchParams(location.search).get('2v2') === '1'; // ?room=NAME&2v2=1 opens a new room as a 2v2 lobby
             const me = allPlayers[0] || {};
-            Promise.resolve(typeof account !== 'undefined' ? account.freshToken() : null).catch(() => null).then(token => { // signed in? the server uses the token to know who you are
+            Promise.resolve(typeof account !== 'undefined' && !this.p2p ? account.freshToken() : null).catch(() => null).then(token => { // signed in? the server uses the token to know who you are
                 if (ws.readyState === 1)
-                    ws.send(JSON.stringify({ t: 'join', room, special: me.special, special2: me.special2, lobby2v2: want2v2, delta: true, token: token || undefined, skin: typeof skinMy === 'function' ? skinMy() : undefined }));
+                    ws.send(JSON.stringify({ t: 'join', room, special: me.special, special2: me.special2, lobby2v2: want2v2, delta: true, token: token || undefined, name: this.p2p && typeof account !== 'undefined' && account.profile ? account.profile.name : undefined, skin: typeof skinMy === 'function' ? skinMy() : undefined }));
             });
             this.pingTimer = setInterval(() => this.ws && this.ws.readyState === 1 && this.ws.send(JSON.stringify({ t: 'ping', c: performance.now() })), NET_PING_MS);
         };
@@ -254,7 +254,7 @@ const net = {
     async refreshIdentity() { // my name or skin changed: a signed-in player has the server look their account up again, a guest just sends the skin
         if (!this.ws || this.ws.readyState !== 1)
             return;
-        const token = typeof account !== 'undefined' ? await account.freshToken().catch(() => null) : null;
+        const token = typeof account !== 'undefined' && !this.p2p ? await account.freshToken().catch(() => null) : null;
         if (!this.ws || this.ws.readyState !== 1)
             return;
         if (token)

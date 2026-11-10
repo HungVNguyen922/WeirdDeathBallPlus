@@ -131,3 +131,8 @@ body.touch #touchui{display:block}
 #movesinfo summary .mot { font: 600 13px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--mut); }
 #movesinfo summary .tot { margin-left: auto; font-size: 12px; color: var(--mut); }
 #movesinfo details.move > table.stats { margin: 0 10px 8px; width: calc(100% - 20px); }
+
+/* peer-to-peer panel (js/host/host.js) */
+#p2p input, #p2p textarea { box-sizing: border-box; padding: 6px 8px; border-radius: 8px; border: 1px solid #4a4466; background: #17132a; color: #fff; font: inherit; }
+#p2p textarea { width: 100%; min-height: 64px; font: 12px ui-monospace, monospace; word-break: break-all; }
+#p2p .code { font: 700 28px ui-monospace, monospace; letter-spacing: .15em; margin: 6px 0; user-select: text; -webkit-user-select: text; }
