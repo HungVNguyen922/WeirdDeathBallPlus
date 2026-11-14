@@ -59,6 +59,29 @@ const xeric = sim => sim.run('players[0].keys.x = true; players[0].keys.z = fals
     check(P(sim, 'fizzleFx', 0) === 0 && P(sim, 'boostFx', 0) === 0, 'the aura owner gets no burst of their own');
     sim = run(xeric, false); check(P(sim, 'fizzleFx', 1) === 0, 'xeric: an unweighted jump is not cut, so no fizzle');
 }
+// 1b) the smaller hyper: another player holding the grapple on the floor WITHOUT weight boosts a little (less than a weighted hyper), and the two kinds act on each other
+{
+    const lite = sim => sim.run('players[0].keys.x = false; players[0].keys.z = true');
+    const base = peak(idle, false), li = peak(lite, false), hy = peak(hyper, false);
+    check(li < base - 2 && li > hy, `hyper lite: grapple jump peak y ${li.toFixed(0)} sits between no hyper (${base.toFixed(0)}) and a weighted hyper (${hy.toFixed(0)})`);
+    check(peak(lite, true) < peak(idle, true) - 1, 'hyper lite: boosts a weighted grapple jump too');
+    const sim = fresh(), fxH = i => sim.run(`players[${i}].floorFx().hyper`), LITE = sim.run('HYPER_LITE');
+    sim.run('players.forEach(p => { p.hyperT = 0; p.hyperLiteT = 0; })');
+    check(fxH(1) === 0 && fxH(0) === 0, 'hyper strength is 0 with no hypers up');
+    sim.run('players[0].hyperLiteT = 1');
+    check(Math.abs(fxH(1) - LITE) < 1e-9 && fxH(0) === 0, 'an unweighted hyper gives HYPER_LITE to the others and nothing to its owner');
+    sim.run('players[0].hyperT = 1');
+    check(fxH(1) === 1, 'one player gives one hyper: overlapping weighted + unweighted timers count once, as the strongest');
+    sim.run('players[0].hyperT = 0; players[0].hyperLiteT = 0; players[1].hyperLiteT = 1');
+    check(Math.abs(fxH(0) - LITE) < 1e-9, 'the kinds act on each other: a weighted-hyper player is boosted by the other\'s unweighted hyper');
+    check(sim.run('hyperMul(3, 0)') === 1 && sim.run('hyperMul(3, 1)') === 3 && Math.abs(sim.run('hyperMul(3, 2)') - 5) < 1e-9, 'hyperMul is additive: strength 2 on a x3 bonus gives x5, not x9');
+    if (sim.run('players.length') >= 3) {
+        sim.run('players.forEach(p => { p.hyperT = 0; p.hyperLiteT = 0; }); players[0].hyperT = 1; players[2].hyperLiteT = 1');
+        check(Math.abs(fxH(1) - (1 + LITE)) < 1e-9, 'hypers from different players ADD (weighted + unweighted = 1 + HYPER_LITE)');
+        sim.run('players[2].hyperT = 1; players[2].hyperLiteT = 0');
+        check(fxH(1) === 2, 'two weighted hypers add to 2');
+    }
+}
 // 3) the owner is never affected by their own auras
 {
     const a = peak(idle, false);

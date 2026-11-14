@@ -72,13 +72,13 @@ function drawFloorFx(p) {
     cx.save();
     cx.lineCap = 'round'; cx.lineJoin = 'round';
 
-    if (p.hyperT > 0) { // HYPER owner: six yellow arcs turning the opposite way to the xeric ring (a touch quicker), plus a ripple under the feet
+    if (p.hyperT > 0 || p.hyperLiteT > 0) { // HYPER owner (an unweighted "lite" hyper: three dimmer arcs instead of six): six yellow arcs turning the opposite way to the xeric ring (a touch quicker), plus a ripple under the feet
         cx.save();
-        const f = Math.min(1, p.hyperT / HYPER_LINGER), rot = -tm / 520;
+        const full = p.hyperT > 0, f = Math.min(1, (full ? p.hyperT : p.hyperLiteT) / HYPER_LINGER) * (full ? 1 : 0.6), rot = -tm / 520, n = full ? 6 : 3;
         cx.shadowColor = '#ff8a1a'; cx.shadowBlur = 12;
         cx.strokeStyle = '#ffd23a'; cx.lineWidth = 3; cx.globalAlpha = 0.4 + 0.5 * f;
-        for (let i = 0; i < 6; i++) {
-            const a = rot + i * Math.PI / 3;
+        for (let i = 0; i < n; i++) {
+            const a = rot + i * Math.PI * 2 / n;
             cx.beginPath(); cx.arc(p.x, p.y, R + 8, a, a + 0.75); cx.stroke();
         }
         cx.strokeStyle = '#ffb21f'; cx.globalAlpha = 0.3 * f; cx.lineWidth = 2;
@@ -107,9 +107,10 @@ function drawFloorFx(p) {
         const live = p.driveT > 0 || p.gjT < 0.5 || p.dribT > 0 ? 1 : 0.55;
         cx.globalCompositeOperation = 'lighter'; cx.shadowColor = '#ff8a1a'; cx.shadowBlur = 10;
         if (fx.hyper) {
-            cx.strokeStyle = '#ff9b2e'; cx.lineWidth = 2.5; cx.globalAlpha = 0.35 + 0.45 * live;
+            const hv = 0.5 + 0.5 * Math.min(1, fx.hyper); // a lite hyper alone (HYPER_LITE) shows fainter than a weighted one
+            cx.strokeStyle = '#ff9b2e'; cx.lineWidth = 2.5; cx.globalAlpha = (0.35 + 0.45 * live) * hv;
             cx.beginPath(); cx.arc(p.x, p.y, R + 3, 0, 7); cx.stroke();
-            cx.strokeStyle = '#ffe45a'; cx.lineWidth = 3; // chevrons pointing up, rising toward me from below (xeric's down chevrons, flipped)
+            cx.strokeStyle = '#ffe45a'; cx.lineWidth = 3 * hv; // chevrons pointing up, rising toward me from below (xeric's down chevrons, flipped)
             for (let i = 0; i < 2; i++) {
                 const u = (tm / 700 + i / 2) % 1, cy = p.y + R + 24 - u * 16;
                 cx.globalAlpha = (0.35 + 0.6 * live) * Math.sin(u * Math.PI);

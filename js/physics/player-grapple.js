@@ -18,6 +18,10 @@ const BALL_SNAP_DAMP = 3;        // 1/s: pulls back a ball moving AWAY from you 
 const BALL_SNAP_T = 2;           // s: a snap lasts at most this long
 const BALL_SNAP_FADE = 0.5;      // s: over the last part of that the snap fades back into the normal leash instead of switching over with a jolt
 
+// How much the hypers around you multiply one of the HYPER_ numbers. full = that number (HYPER_REACH / HYPER_DRIVE / HYPER_KICK), strength = floorFx().hyper (0 = none).
+// ADDITIVE: every hyper adds its share of the bonus, so strength 2 gives 1 + 2 x (full - 1), not full x full.
+const hyperMul = (full, strength) => 1 + (full - 1) * strength;
+
 mixin(Player, {
     // ---- Hyper / Xeric (constants.js has the numbers and the rules in one place) ----
     // Called for every player once per tick BEFORE anyone steps, so the order players are stepped in never matters.
@@ -27,19 +31,22 @@ mixin(Player, {
         const hyperOn = this.alive && k.x && zEff && (this.ground || onFloorRope) && !this.onBall; // weight + grapple, on the floor or hooked to it
         const xericOn = this.alive && this.ground && k.x && !zEff;                                   // weight on the floor, grapple not held
         this.hyperT = hyperOn ? HYPER_LINGER : Math.max(0, this.hyperT - DT);
+        const liteOn = this.alive && !k.x && zEff && (this.ground || onFloorRope) && !this.onBall; // grapple held WITHOUT weight, on the floor or hooked to it: a smaller hyper (HYPER_LITE)
+        this.hyperLiteT = liteOn ? HYPER_LINGER : Math.max(0, this.hyperLiteT - DT);
         this.xericT = xericOn ? XERIC_LINGER : Math.max(0, this.xericT - DT);
         this.boostFx = Math.max(0, this.boostFx - DT);
         this.fizzleFx = Math.max(0, this.fizzleFx - DT);
     },
-    // What the OTHER players' floor auras do to me right now: { hyper, xeric } (true = at least one other player has it up). The AI's planning copies see neither.
+    // What the OTHER players' floor auras do to me right now: { hyper, xeric }. hyper = the total strength of the other players' hypers (0 = none; a weighted hyper is 1, an unweighted one
+    // HYPER_LITE; they ADD, see hyperMul). xeric: true = at least one other player has it up. The AI's planning copies see neither.
     floorFx() {
-        const fx = { hyper: false, xeric: false };
+        const fx = { hyper: 0, xeric: false };
         if (this.sim)
             return fx;
         const onFloor = this.ground || (this.rope && this.ropeGround && !this.onBall); // standing on the floor, or tethered to it
         for (const o of players)
             if (o !== this && o.alive && (FLOOR_FX_TEAMMATES || o.team !== this.team)) {
-                if (o.hyperT > 0) fx.hyper = true;
+                fx.hyper += o.hyperT > 0 ? 1 : o.hyperLiteT > 0 ? HYPER_LITE : 0; // one player gives one hyper, their strongest (their two timers can overlap for a moment when they let go of weight)
                 if (o.xericT > 0 && onFloor) fx.xeric = true; // xeric only reaches players who are on the floor, or hooked to it
             }
         return fx;
@@ -149,13 +156,15 @@ mixin(Player, {
             this.gjT = 0;
             if (this.keys.x && !this.onBall)
                 this.hyperT = HYPER_LINGER; // a weighted grapple jump off the floor is a hyper in passing: it lasts past the moment you leave the floor
+            else if (!this.onBall)
+                this.hyperLiteT = HYPER_LINGER; // (an unweighted one is the smaller hyper in passing)
             // The rope's length becomes the reach: one more GJ_REACH_GROUND out than we are now (on a platform that is a player length off it), never past RANGE.
             // Latching high above the pivot (already airborne) is weaker than a jump off the platform: full strength within GJ_NEAR u of the pivot, fading to GJ_AIR_SCALE by GJ_FAR u.
             const air = 1 - (1 - GJ_AIR_SCALE) * Math.max(0, Math.min(1, (d - GJ_NEAR) / (GJ_FAR - GJ_NEAR)));
             const fxL = this.floorFx();
             if (fxL.hyper) this.boostFx = BOOST_FX;                      // (display: this jump is being boosted)
             if (fxL.xeric && this.keys.x) this.fizzleFx = FIZZLE_FX;     // (display: this weighted jump is being cut)
-            this.len = Math.min(playerReach(this), Math.max(d, MIN_LEN) + GJ_REACH_GROUND * air * (this.keys.x ? GJ_REACH_WEIGHTED : 1) * (fxL.hyper ? HYPER_REACH : 1));
+            this.len = Math.min(playerReach(this), Math.max(d, MIN_LEN) + GJ_REACH_GROUND * air * (this.keys.x ? GJ_REACH_WEIGHTED : 1) * hyperMul(HYPER_REACH, fxL.hyper));
             this.driveT = GJ_DRIVE_T;
             this.driveVmax = lift * GJ_DRIVE_BOOST * air * (this.keys.x && fxL.xeric ? XERIC_JUMP : 1); // top speed away from the pivot this jump can reach (a xeric under a weighted jump makes it a misfire)
             this.driveAcc = this.driveVmax / GJ_DRIVE_T; // delivered by step() as a pull away from the pivot, not as one kick
@@ -237,7 +246,7 @@ mixin(Player, {
                     const m = Math.hypot(ux, uy) || 1;
                     ux /= m; uy /= m;
                     const ease = Math.min(1, room / GJ_EASE); // glide in: the pull fades over the last GJ_EASE u
-                    const hb = fx.hyper ? HYPER_DRIVE : 1; // another player's hyper speeds the whole pull up (acceleration and top speed)
+                    const hb = hyperMul(HYPER_DRIVE, fx.hyper); // another player's hyper speeds the whole pull up (acceleration and top speed)
                     const out = this.vx * ux + this.vy * uy; // speed already heading away from the pivot: the drive never pushes past this jump's top speed, so a regrab on the way up cannot stack
                     if (out < this.driveVmax * hb) {
                         const add = Math.min(this.driveAcc * hb * ease * DT, this.driveVmax * hb - out);
@@ -255,7 +264,7 @@ mixin(Player, {
                     if (fx.xeric) this.fizzleFx = FIZZLE_FX;
                     const past = Math.max(0, d - this.len);
                     const room = Math.max(0, 1 - past / WEIGHT_KICK_REACH);
-                    const want = WEIGHT_KICK * room * (this.ropeGround ? 1 : WALL_KICK_SCALE) * (fx.hyper ? HYPER_KICK : 1) * (fx.xeric ? XERIC_KICK : 1);
+                    const want = WEIGHT_KICK * room * (this.ropeGround ? 1 : WALL_KICK_SCALE) * hyperMul(HYPER_KICK, fx.hyper) * (fx.xeric ? XERIC_KICK : 1);
 
                     // Kick direction: away from the pivot, reshaped by the arrows. Only once the float is established (taut),
                     // so the weighted grapple-jump launch keeps its direction.

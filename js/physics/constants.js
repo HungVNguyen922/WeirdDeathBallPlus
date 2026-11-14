@@ -160,6 +160,7 @@ const WEIGHT_KICK_REACH = 10 * PL;     // u past the float point where a press s
 // without the grapple.  Both are auras that act on every OTHER player.
 // (QUAKE is only the seesaw floor's pop, see terrain.js; Xeric soaks most of it up.)
 const HYPER_LINGER = 0.3;             // s a hyper stays active after the owner lets go or leaves the floor (the window a weighted grapple jump launches inside)
+const HYPER_LITE = 0.4;           // how strong a hyper from holding the grapple on the floor WITHOUT weight is, as a fraction of a weighted one (1 = same, 0 = none). It scales each bonus (HYPER_REACH / HYPER_DRIVE / HYPER_KICK): bonus = 1 + (HYPER_x - 1) x strength. Strengths from different players ADD.
 const HYPER_DRIVE = 1.6;              // multiplier on the grapple-jump pull (its acceleration AND top speed) of any other player while a hyper is active
 const HYPER_REACH = 1.6;              // multiplier on how far a grapple jump's rope reaches (GJ_REACH_GROUND) when its hook lands during another player's hyper: the faster pull needs room to carry them higher
 const HYPER_KICK = 1.3;               // multiplier on the weight-kick strength of any other player while a hyper is active

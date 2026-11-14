@@ -103,7 +103,7 @@ class Player {
         this.prevSp2 = false;
         this.arrowQueued = false;
         this.gBurst = 0;
-        this.hyperT = 0; this.xericT = 0;           // seconds left on this player's hyper / xeric aura (they act on every OTHER player)
+        this.hyperT = 0; this.hyperLiteT = 0; this.xericT = 0;           // seconds left on this player's hyper / xeric aura (they act on every OTHER player)
         this.boostFx = 0; this.fizzleFx = 0;        // display timers: a jump / kick was just boosted by another's hyper, or cut by another's xeric
     }
     get grounded() { return this.ground; }

@@ -82,12 +82,12 @@ function setFloorFx(v) {
 function draw() {
     if (floorFxOn)
         return drawScene();
-    const saved = allPlayers.map(p => [p.hyperT, p.xericT, p.boostFx, p.fizzleFx]), qt = quakeFx.t;
+    const saved = allPlayers.map(p => [p.hyperT, p.hyperLiteT, p.xericT, p.boostFx, p.fizzleFx]), qt = quakeFx.t;
     for (const p of allPlayers)
-        p.hyperT = p.xericT = p.boostFx = p.fizzleFx = 0;
+        p.hyperT = p.hyperLiteT = p.xericT = p.boostFx = p.fizzleFx = 0;
     quakeFx.t = 0; // drawQuakeFx and quakeShake both read this
     try { drawScene(); } finally {
-        allPlayers.forEach((p, i) => { [p.hyperT, p.xericT, p.boostFx, p.fizzleFx] = saved[i]; });
+        allPlayers.forEach((p, i) => { [p.hyperT, p.hyperLiteT, p.xericT, p.boostFx, p.fizzleFx] = saved[i]; });
         quakeFx.t = qt;
     }
 }
