@@ -9,6 +9,8 @@ const FLEX_RESPAWN_T = 2; // sandbox: seconds before a dead player comes back
 const isSandbox = () => players.length > 0 && (!players.some(p => p.team === 0) || !players.some(p => p.team === 1)); // a team is empty: nothing to beat, nothing to score
 let swapBanner = 0; // > 0: the banner is showing and the world is frozen (counts down; part of the saved state)
 let swapAt = -1; // the score total the last swap happened at, so one total can only swap once (a double KO must not swap twice)
+const campaignOn = () => typeof campaign !== 'undefined' && campaign.on; // the solo campaign (game/campaign.js) is running
+const goalOf = t => campaignOn() ? (t === 0 ? campaignGoal() : campaignLose()) : WIN; // points team t needs: to win the match, or in the campaign to clear the stage (you) / beat you (the boss)
 let score = [0, 0], pause = 0, over = false, msg = '';
 let teamSize = 1; // 1 = 1v1, 2 = 2v2
 let swapOn = true; // the menu toggle: sides trade places every SWAP_EVERY points (set to false here to make it off by default)
@@ -140,6 +142,7 @@ function pickStep() { // one physics step of an open pick screen
         pick.go = PICK_GO_T;
 }
 function setPickMode(on) { // the menu toggle: restarts the match, so the first pick screen comes up straight away
+    if (campaignOn()) campaignAbort(); // changing the match type ends the campaign
     pickFixed = !!on;
     resetMatch();
 }
@@ -159,6 +162,7 @@ function equipSpecial(p, slot, id) {
 }
 
 function setTwoSpecials(on) { // the menu toggle: restarts the match
+    if (campaignOn()) campaignAbort(); // changing the match type ends the campaign
     twoSpecials = !!on;
     for (const p of allPlayers) {
         if (!twoSpecials && (p.special === 'fighter' || p.special2 === 'fighter')) {
@@ -172,6 +176,7 @@ function setTwoSpecials(on) { // the menu toggle: restarts the match
 }
 
 function setSwapMode(on) { // the menu toggle: restarts the match so the sides start the right way round
+    if (campaignOn()) campaignAbort(); // changing the match type ends the campaign
     swapOn = !!on;
     resetMatch();
 }
@@ -192,16 +197,18 @@ function newRound() {
 function point(t, why) {
     score[t]++;
     events.onPoint(t, why);
-    over = score[t] >= WIN;
-    msg = `${t === 0 ? 'Blue' : 'Red'} ${why}` + (over ? ' - wins the match!' : '');
+    over = score[t] >= goalOf(t);
+    msg = `${t === 0 ? 'Blue' : 'Red'} ${why}` + (over ? (campaignOn() ? campaignOverText(t) : ' - wins the match!') : '');
     pause = over ? WIN_PAUSE : POINT_PAUSE;
 }
 function setTeamSize(size) { // 1 = 1v1, 2 = 2v2: restarts the match
+    if (campaignOn()) campaignAbort(); // changing the match type ends the campaign
     teamSize = size;
     layoutTeams(size);
     resetMatch();
 }
 function setRoster(ids, teams = ids.map(id => id % 2)) { // the online server and Flex: exactly these players, teams[k] = the team of ids[k]. Restarts the match
+    if (campaignOn()) campaignAbort(); // changing the match type ends the campaign
     layoutRoster(ids, teams);
     teamSize = [0, 1].some(t => players.filter(p => p.team === t).length > 1) ? 2 : 1;
     resetMatch();
@@ -294,6 +301,8 @@ function update() {
                 sidesSwapped = false; // a new match starts on the normal sides
                 swapAt = -1;
                 allPlayers.forEach(p => { p.exploCarry = false; }); // the Explode refund carries between points, never into a new match (resetMatch does the same)
+                if (campaignOn())
+                    campaignAfterOver(); // next stage / retry / back to normal after the last
             }
             msg = '';
             maybeSwapSides(); // before newRound, so the players spawn on their new sides

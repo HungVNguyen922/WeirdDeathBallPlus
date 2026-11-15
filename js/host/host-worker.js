@@ -16,7 +16,7 @@ const SIM_FILES = [
     'physics/bat.js', 'physics/player.js', 'physics/player-grapple.js', 'physics/player-collide.js', 'physics/player-casts.js', 'physics/player-specials.js', 'physics/player-hopper.js',
     'physics/bodies.js', 'physics/projectiles.js', 'physics/arrows.js', 'physics/boomerangs.js', 'physics/portals.js', 'physics/swap.js', 'physics/mines.js', 'physics/split.js', 'physics/fighter.js',
     'physics/statics.js', 'physics/accelerator.js', 'physics/builder.js', 'physics/block-interactions.js', 'physics/reel.js',
-    'game/rules.js', 'game/simstate.js', 'game/ai.js',
+    'game/rules.js', 'game/simstate.js', 'game/ai.js', 'game/campaign.js',
 ];
 const HOSTED_ROOM = 'p2p';
 

@@ -152,6 +152,30 @@ const gameMenu = (() => {
                 labelSwap();
             }
         });
+    // Campaign button: solo run through the six bosses (game/campaign.js). Offline only; turning it off (or changing the match type) goes back to a normal match.
+    const campBtn = document.getElementById('campaignmode'), campTitle = campBtn ? campBtn.title : '';
+    function labelCamp() {
+        if (!campBtn || typeof campaign === 'undefined')
+            return;
+        campBtn.textContent = campaign.on ? `Campaign: Stage ${campaign.stage + 1}/${CAMPAIGN_STAGES.length}` : 'Campaign: Off';
+        campBtn.classList.toggle('on', campaign.on);
+        campBtn.disabled = !!net.on;
+        campBtn.title = net.on ? 'The campaign is solo play: leave the online room first.' : campTitle;
+    }
+    if (campBtn)
+        campBtn.addEventListener('click', () => {
+            if (net.on)
+                return;
+            if (campaign.on)
+                campaignStop(true);
+            else
+                campaignStart();
+            labelCamp();
+            labelTwo();
+            labelSwap();
+            labelCamp();
+            labelPick();
+        });
     // The 2v2 button: offline it toggles 2v2 against the AI (input.js keeps its label); online it is the room's 2v2 lobby switch, host only. The server restarts the match, and the
     // label follows the roster message, so it catches up a moment after the click.
     const teamBtn = document.getElementById('mode2v2');
@@ -359,6 +383,7 @@ const gameMenu = (() => {
                 labelPick();
                 labelTwo();
                 labelSwap();
+                labelCamp();
                 renderPicker();
             }
         });
@@ -373,6 +398,7 @@ const gameMenu = (() => {
         labelPick();
         labelTwo();
         labelSwap();
+        labelCamp();
         labelTeams();
         labelFlex(); renderFlex();
         labelRanked();
@@ -388,6 +414,7 @@ const gameMenu = (() => {
         labelPick();
         labelTwo();
         labelSwap();
+        labelCamp();
         labelTeams();
         labelFlex(); renderFlex();
         labelRanked();
@@ -417,6 +444,7 @@ const gameMenu = (() => {
     labelPick();
     labelTwo();
     labelSwap();
+    labelCamp();
         // The Menu button's real, clickable element: an invisible <button> placed exactly over the pill that special-menu.js draws on the floor. A real button gets mouse, touch
     // and keyboard handling for free, and it does not depend on the canvas hit-test. It is repositioned whenever the canvas changes size.
     const btn = document.getElementById('menubtn');

@@ -62,7 +62,7 @@ function aiReset(i) {
     if (AI_SPECIALS && ai[i].on && !pickFixed)
         allPlayers[i].special = aiPickSpecial(allPlayers[i]);
 }
-function aiPickSpecial(p) { return AI_SPECIALS ? AI_SPECIAL_POOL[Math.floor(Math.random() * AI_SPECIAL_POOL.length)] : 'dash'; }
+function aiPickSpecial(p) { if (typeof campaign !== 'undefined' && campaign.on && p.id === 1) return campaignStage().special; /* the campaign boss has the ability of its stage */ return AI_SPECIALS ? AI_SPECIAL_POOL[Math.floor(Math.random() * AI_SPECIAL_POOL.length)] : 'dash'; }
 function snapshotFx() { return { sv: saw.v, st: saw.t, qf: { ...quakeFx }, hp: [...padFlash], pf: pegs.map(q => [q.flash, q.hits, q.nx, q.ny]) }; }
 function restoreFx(s) {
     saw.v = s.sv;
@@ -2100,5 +2100,18 @@ function aiDrive(i) {
         aiFree(i, me, A, k);
     }
     if (AI_SPECIALS) aiSpecial(me, A, k);
-    Object.assign(me.keys, k);
+    Object.assign(me.keys, aiLag(A, k));
+}
+// Reaction delay: A.lvl (0..1, default 1 = none) is how sharp this computer player is. Below 1 it acts on what it decided a few ticks ago (up to AI_LAG_MAX ticks at lvl 0), which
+// spoils the timing of its planned jumps and releases: the campaign uses it to make the early bosses beatable. The queue is dropped whenever the level changes.
+const AI_LAG_MAX = 14;
+function aiLag(A, k) {
+    const lag = Math.round((1 - Math.max(0, Math.min(1, A.lvl === undefined ? 1 : A.lvl))) * AI_LAG_MAX);
+    if (!lag) {
+        A.kq = null;
+        return k;
+    }
+    const q = A.kq && A.kq.lag === lag ? A.kq : (A.kq = { lag, a: [] });
+    q.a.push({ ...k });
+    return q.a.length > lag ? q.a.shift() : q.a[0];
 }

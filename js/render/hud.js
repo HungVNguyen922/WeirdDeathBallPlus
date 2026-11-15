@@ -41,7 +41,8 @@ function drawBar(side, color, frac, flash) {
     cx.strokeStyle = 'rgba(0,0,0,.6)'; // one notch per point
     cx.lineWidth = 2;
     cx.beginPath();
-    for (let i = 1; i < WIN; i++) line(bx + bw * i / WIN, by, bx + bw * i / WIN, by + bh);
+    const goal = hud.goal || WIN; // (set per bar in drawHud: the campaign has a different target for you and for the boss)
+    for (let i = 1; i < goal; i++) line(bx + bw * i / goal, by, bx + bw * i / goal, by + bh);
     cx.stroke();
     // >>> extra bar effects (sparks, shimmer, particles...) can be drawn here: they are clipped to the bar, with fw/fx/frac available <<<
     cx.restore();
@@ -74,20 +75,23 @@ function drawNetStatus() { // online: room, seat, ping and so on (net.status is 
 }
 function drawHud() {
     for (const t of [0, 1]) { // fade bookkeeping: keep this running every frame, the arena reads hud.line and padFlash
-        hud.shown[t] += (Math.min(1, score[t] / WIN) - hud.shown[t]) * 0.08;
+        hud.shown[t] += (Math.min(1, score[t] / goalOf(t)) - hud.shown[t]) * 0.08;
         hud.flash[t] *= 0.94;
         padFlash[t] *= 0.9; // physics sets it on a hatchet hit; we fade it
         hud.line[t] *= 0.96;
     }
+    hud.goal = goalOf(0);
     drawBar(sideSwap(0), '#42a5f5', hud.shown[0], hud.flash[0]);
+    hud.goal = goalOf(1);
     drawBar(sideSwap(1), '#ef5350', hud.shown[1], hud.flash[1]);
+    hud.goal = 0;
     const cw = 128, ch = 50, x = W / 2 - cw / 2, y = HUD_TOP, mid = W / 2; // center plaque
     cx.fillStyle = '#0b0e12'; cx.strokeStyle = '#d5dbe1'; cx.lineWidth = 3;
     cx.beginPath(); cx.roundRect(x, y, cw, ch, 6); cx.fill(); cx.stroke();
     cx.textAlign = 'center';
     cx.font = 'bold 10px system-ui, sans-serif';
     cx.fillStyle = '#98a2ad';
-    cx.fillText(isSandbox() ? 'SANDBOX' : 'FIRST TO ' + WIN, mid, y + 15);
+    cx.fillText(isSandbox() ? 'SANDBOX' : campaignOn() ? `STAGE ${campaign.stage + 1}/${CAMPAIGN_STAGES.length} · TO ${campaignGoal()}` : 'FIRST TO ' + WIN, mid, y + 15);
     cx.font = 'bold 28px system-ui, sans-serif';
     const tl = sideSwap(0), tr = sideSwap(1); // the teams on the left and right right now
     cx.fillStyle = teamColor(tl); cx.fillText(String(score[tl]), mid - 32, y + 43);
