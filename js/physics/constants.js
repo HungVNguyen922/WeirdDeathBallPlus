@@ -241,6 +241,7 @@ const DASH_COOLDOWN = 5;              // s before the next dash (on top of: one 
 
 // --- Plinko ------------------------------------------------------------------------------------------------------------------------------------------------------
 const PEG_R = PL / 2;                 // plinko peg radius (u): half a player's size (r 8 vs 16). Bounce strength = the hatchet's (PAD_*)
+const PEG_GRAPPLE = true;         // plinko pegs can be grappled (a fixed point like a ledge: wall-style tether, no grapple jump). false = pegs are not grappleable
 const PEG_MAX = 2;                    // pegs per player: placing a new one removes the oldest
 const PEG_LIFE = 10;                  // seconds a peg lasts before it fizzles out
 const PLINKO_CAST = DASH_CAST;        // s from pressing until the peg is placed (same as dash)

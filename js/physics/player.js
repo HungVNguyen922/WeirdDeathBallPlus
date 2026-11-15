@@ -31,6 +31,7 @@ class Player {
         this.gjN = 0; this.gjT = 99;               // grapple-jump chain: jumps so far, seconds since the last one
         this.driveT = 0; this.driveAcc = 0; this.driveVmax = 0; // the grapple-jump drive still running (see GJ_DRIVE_T): seconds left, and its acceleration (u/s^2)
         this.tball = null; // the ball (the death ball or a decoy) we are tethered to while onBall
+        this.pegHook = null; // {x, y} of the plinko peg our rope is on, else null
         this.taut = false;
         this.floatW = 1; // grapple-float weight 0..1: dribbling fades it out so the rope can pull you in, then it eases back
         this.dribT = 0;  // seconds left of the 'dribbling' window opened by a weighted kick

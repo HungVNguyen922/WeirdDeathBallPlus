@@ -105,6 +105,12 @@ mixin(Player, {
             const hd = Math.hypot(hp.x - this.x, hp.y - this.y);
             c.push({ p: hp, d: hd, len: Math.max(hd, 41), b: true, ground: false, ball: b, decoy: b !== ball });
         }
+        if (PEG_GRAPPLE && !this.sim) // plinko pegs (fixed in space, so the pivot is a plain point on the peg's edge facing us; the AI's planning copies do not know them)
+            for (const q of pegs) {
+                const ang = Math.atan2(this.y - q.y, this.x - q.x);
+                const hp = { x: q.x + Math.cos(ang) * q.r, y: q.y + Math.sin(ang) * q.r }, hd = Math.hypot(hp.x - this.x, hp.y - this.y);
+                c.push({ p: hp, d: hd, len: Math.max(hd, MIN_LEN), b: false, ground: false, peg: { x: q.x, y: q.y } });
+            }
         if (!this.sim)
             for (const b of projectiles)
                 if (b.type === 'block' && !b.broken) {
@@ -124,6 +130,7 @@ mixin(Player, {
             this.len = best.len;
             this.onBall = true;
             this.tball = best.ball;
+            this.pegHook = null;
             best.ball.lastGrab = this.id; // who grappled it last (the ACCELERATOR special boosts the ball for that player, see physics/accelerator.js)
             this.ropeGround = false;
             this.ropeBase = null;
@@ -133,18 +140,19 @@ mixin(Player, {
         }
         const delay = this.grounded ? GROUND_DELAY : HOOK_DELAY; // the hook takes a moment to land
         if (delay > 0) {
-            this.pending = { p: best.p, t: delay, t0: delay, ground: best.ground };
+            this.pending = { p: best.p, t: delay, t0: delay, ground: best.ground, peg: best.peg };
             return;
         }
-        this.land(best.p, best.ground);
+        this.land(best.p, best.ground, best.peg);
     },
     // The hook lands on a surface: tether length = distance right now. A grapple jump (rising on floor/slopes) kicks the player
     // directly away from the pivot (weight multiplies it), with matching tether slack; a pivot behind you gives a diagonal hop.
-    land(p, ground) {
+    land(p, ground, peg) { // peg = {x, y} of the plinko peg this hook is on (or undefined)
         const dx = this.x - p.x, dy = this.y - p.y, d = Math.hypot(dx, dy);
         this.rope = p;
         this.onBall = false;
         this.ropeGround = ground;
+        this.pegHook = peg || null; // pegs never move, so their position is their identity (it survives a save / load, unlike an object reference)
         this.ropeBase = ground ? { x: p.x, y: p.y - sawY(p.x) } : null; // floor pivots ride the floor when it pops
         this.len = Math.max(d, MIN_LEN);
         this.taut = false;
@@ -200,7 +208,7 @@ mixin(Player, {
             if (this.pending.t <= 0) {
                 const h = this.pending;
                 this.pending = null;
-                this.land(h.p, h.ground);
+                this.land(h.p, h.ground, h.peg);
             }
         }
         if (this.rope || this.pending) {
@@ -219,6 +227,14 @@ mixin(Player, {
             this.onBall = false;
             this.tball = null;
             this.stretchT = 0;
+        }
+        if (this.pegHook && !(this.rope && pegs.some(q => q.x === this.pegHook.x && q.y === this.pegHook.y))) { // the peg we hang from fizzled out or was replaced: the grip goes with it
+            if (this.rope) {
+                this.rope = null;
+                this.driveT = 0;
+                this.stretchT = 0;
+            }
+            this.pegHook = null;
         }
         // Tether = a leash: a maximum length, nothing more. Stretched past it = spring + damping (hard limit on surfaces); closer than it the rope is slack. The pivot
         // has no effect on you at all: no push, no steering, nothing solid, so you can swing right through it. The ball pivot sits on its edge and spins with it.
