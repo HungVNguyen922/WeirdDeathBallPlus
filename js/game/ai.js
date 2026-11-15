@@ -31,7 +31,18 @@ const AI_RESCUE_MARGIN = 1;              // a rescue grab only has to keep this 
 const AI_DASH_USE = 0.35;                 // chance that a latch is allowed to use the dash shot at all (0 = never dashes, 1 = old behaviour). The rest of the time it shoots with the rope alone.
 const AI_THREAT = 50; // dodge when the ball would get this close (u; touching is 30)
 const AI_SPECIALS = true;                  // false = the AI only ever uses Dash, like before
-const AI_SPECIAL_POOL = ['dash', 'plinko', 'marionette', 'decoy', 'arrow'];
+const AI_SPECIAL_POOL = ['dash', 'plinko', 'marionette', 'decoy', 'arrow', 'bat', 'barbwire', 'warp', 'awakened', 'explode'];
+const AI_BAT_SEE = 300;                    // u: only look at the death ball for a swing when it is this close (the rollouts are not free)
+const AI_BAT_MELEE = 50;                   // u: an enemy this far beyond the bat's reach is still looked at for a melee swing (they may walk into it)
+const AI_BARB_HOLD = 1.1;                  // s: how long a barbwire that is out is held (its cooldown is 2x the time it was out)
+const AI_BARB_TAPS = [0, 2, 3, 4];         // grapple-jump tap counts a barbwire jump tries (the wire wants a low, controlled float over the enemy)
+const AI_BARB_NEAR = 300;                  // u: an enemy this close is checked for a lucky wire shot
+const AI_WARP_HOME = 0.4;                  // fraction of NETX from our own goal line where the warp marker is dropped (the back half of our side)
+const AI_WARP_FAR = 380;                   // u from that spot: further than this counts as "out invading"
+const AI_AWAKE_SEE = 520;                  // u: an enemy this close makes an Awakened AI power up
+const AI_SLAM_MIN = 250;                   // a ball slam must be worth this much in the rollout (it scores or hits an enemy)
+const AI_EXPLODE_MIN = 200;                // a blast must leave the world worth this much (kills an enemy / scores / ...)
+const AI_EXPLODE_GAIN = 200;               // ... and at least this much better than not blasting
 const AI_LOW = true;                       // low-to-ground style
 const AI_ALT_SOFT = H * 0.45, AI_ALT_PEN = 0.06; // held plans lose points for flying above this height
 const AI_CONTEST = true;                   // move to meet a shot instead of waiting at the midline
@@ -67,7 +78,7 @@ function aiClone(p) {
     c.rope = p.rope ? { ...p.rope } : null;
     c.ropeBase = p.ropeBase ? { ...p.ropeBase } : null;
     c.pending = p.pending ? { ...p.pending, p: { ...p.pending.p } } : null;
-    c.casts = (p.casts || []).map(x => ({ ...x })); // (own copies: a shared list would let a look-ahead leave casts on the real player)
+    c.casts = (p.casts || []).filter(x => x.type !== 'bat').map(x => ({ ...x })); // (a charging bat is not carried into a look-ahead: the copy has no reason to swing it, and it would whack the held ball) // (own copies: a shared list would let a look-ahead leave casts on the real player)
     c.cd = { ...p.cd };
     c.dashDir = [...p.dashDir];
     c.sim = true; // a planning copy: it must never add pegs / decoys to the real game
@@ -346,7 +357,7 @@ function* aiInvadeJob(me0, frozen, tgt, out) {
                 break;                         // the death ball got us, or it scored on us meanwhile
             if (Math.hypot(V.me.x - en.x, V.me.y - en.y) < V.me.r + en.r + 2) {
                 const rv = Math.hypot(V.me.vx - en.vx, V.me.vy - en.vy);
-                if (rv >= AI_INVADE_MIN_V) {       // good enough: take it (the AI stands still while this runs, so a quick answer matters more than the best one)
+                if (rv >= (out.minV || AI_INVADE_MIN_V)) {       // good enough: take it (the AI stands still while this runs, so a quick answer matters more than the best one)
                     out.ok = true;
                     out.taps = taps;
                     out.run = run;
@@ -590,6 +601,10 @@ function aiHeldKeys(me, b, hs, k) {
         k.z = false;                           // the meter is about to tear it away anyway: let go on our own terms
     if (hs.rescue !== undefined && hs.t > hs.rescue && !aiRisky(tb, me))
         k.z = false;                           // a rescue grab: it only had to bleed off the ball's speed. (Only let go if the ball is then somewhere safe: a slow ball left rolling towards our goal is just a goal a moment later; the normal plans take over instead.)
+    if (hs.warp && !hs.warped && hs.t >= 0.05 && me.warp && me.cd.warp <= 0) { // warp to the marker mid-hold: the rope is stretched past its length and whips the ball
+        k.sp = true;
+        hs.warped = true;
+    }
 }
 // Keys during an engage jump (before the grapple latches). E = { t, mode: 'toward' | 'none' | 'away' }.
 function aiEngageKeys(me, b, E, k) {
@@ -828,8 +843,15 @@ function* aiHeldJob(me0, hs0, out) { // the best held plan from here (after the 
     }
     let bestV = -Infinity;
     const vals = {};                           // each plan's value before the stay-with-it bonus
+    const warpOk = me0.has('warp') && me0.warp && me0.cd.warp <= 0 && Math.hypot(me0.warp.x - me0.x, me0.warp.y - me0.y) > 200 && !hs0.warped; // a marker far from here: a shot may be worth warping into
+    const variants = [];
     for (const plan of plans) {
-        const V = aiSimFork(S), h = { ...hs, plan };
+        variants.push([plan, false]);
+        if (warpOk && /^(sling|loop)/.test(plan))
+            variants.push([plan, true]);       // the same plan, with a warp at the start
+    }
+    for (const [plan, wv] of variants) {
+        const V = aiSimFork(S), h = { ...hs, plan, warp: wv };
         let minD = 1e9, minY = 1e9, minHome = 1e9, v = null, relT = Infinity, scoreT = Infinity, relX = 0, dead = false; // minHome: the ball's closest approach to our goal line
         const steps = plan === 'loopO' || plan === 'loopU' ? AI_LOOP_STEPS : AI_HELD_STEPS; // a loop needs time to come round
         for (let i = 0; i < steps && v === null; i++) {
@@ -928,12 +950,13 @@ function* aiHeldJob(me0, hs0, out) { // the best held plan from here (after the 
         if (AI_LOW && minY < AI_ALT_SOFT) v -= (AI_ALT_SOFT - minY) * AI_ALT_PEN; // stay low: coming down from a high float is where shots get through
         if (plan === 'loopO' && v >= 90)
             v += AI_OVERHAND_BONUS;            // the overhand shot works in the look-ahead (its release scores or hits): prefer it to the other shots
-        vals[plan] = v;
+        vals[plan + (wv ? '+w' : '')] = v;
         v += plan === hs0.plan ? (aiCanDash(me0, hs0) ? 6 : AI_STICK) : 0; // keep the current plan unless another is clearly better (without a dash to spend, nothing else would ever commit it, and it flip-flopped between plans every 0.15 s)
         if (v > bestV) {
             bestV = v;
             out.plan = plan;
             out.val = v;
+            out.warp = wv;
         }
     }
     // Nothing scores or hits anyone (usual without a dash) and 'hold' (0) beats every plan that merely tries: the AI stood still, timed out and dropped the ball at its own feet. Do the designed
@@ -1132,6 +1155,544 @@ function aiSpDash(me, A, k) {
     A.spCool = 1;
 }
 
+// ================= THE NEXT FIVE SPECIALS: BAT, BARBWIRE, WARP, AWAKENED, EXPLODE =================
+// What each one is for (how the AI plays it):
+//   BAT       charge it and keep holding it while we grapple around; swing when a full charge catches an enemy (it overcharges them), or when a rollout says a swing deflects a shot at our goal / scores.
+//   BARBWIRE  an invader's tool: get above an enemy, hook what is beneath them, and the rope kills. A look-ahead (aiBarbJob) finds a jump that ends with the wire through them; it also fires when it happens by chance.
+//   WARP      the marker lives in the back half of our side. When we are out invading and the enemy is about to shoot, we drop the rope and warp home. Held-ball plans may also warp mid-swing to whip the rope.
+//   AWAKENED  power up when an enemy (or a loose ball) is close, then chase the enemy who has their grapple out (touching an enemy with YOUR grapple out overcharges YOU, and we cannot be overcharged, so we ram them and they pay) and slam the ball (x3 crashes).
+//   EXPLODE   blast when a rollout says it kills an enemy, scores, or saves a shot; invade to get up close (aiBlastJob); and add a blast to the release of a loop / swing for a faster shot.
+const aiFoes = me => players.filter(q => q.team !== me.team && q.alive);
+const aiQuant = a => Math.round(a / (Math.PI / 4)) * (Math.PI / 4); // the nearest of the 8 directions the arrow keys can hold
+
+// Plays a ball forward with simple stand-ins for us (self, may be null) and the enemies. +260 an enemy is hit by it, +300 it scores for us (atk = the goal we attack), -400 it scores on us, -1000 it kills us.
+function aiRollWorld(atk, self, b, foes) {
+    const fx = snapshotFx();
+    let v = 0;
+    for (let n = 0; n < 150; n++) {
+        const sc = b.step();
+        if (self)
+            aiEnemyStep(self);
+        for (const e of foes)
+            aiEnemyStep(e);
+        if (self && Math.hypot(b.x - self.x, b.y - self.y) < self.r + b.r) { v = -1000; break; }
+        if (foes.some(e => Math.hypot(b.x - e.x, b.y - e.y) < e.r + b.r)) { v = 260 - n * 0.4; break; }
+        if (sc !== null || aiInGoal(b)) { v = (b.x < W / 2 ? -1 : 1) === atk ? 300 - n * 0.4 : -400; break; }
+    }
+    restoreFx(fx);
+    return v;
+}
+
+// ---- BAT ----
+const aiBatProxy = me => Object.assign(Object.create(Player.prototype), { x: me.x, y: me.y, vx: me.vx, vy: me.vy, r: me.r, team: me.team, sim: true });
+const aiBatCast = (c0, ang) => ({ type: 'bat', t: BAT_T, t0: BAT_T, charging: false, charge: c0.charge, pow: c0.charge, hx: 0, hy: 0, inv: !!c0.inv, ang, hits: 0 });
+// After how many ticks does a swing aimed at ang (released now) catch `body`? -1 = it never does. Uses the real sweep maths (batStep) on a copy of the body.
+function aiBatHitTick(me, c0, ang, body, stepBody) {
+    const p = aiBatProxy(me), c = aiBatCast(c0, ang);
+    for (let n = 0; n < Math.round(BAT_T / DT) + 2; n++) {
+        batStep(p, c, body);
+        if (c.hits)
+            return n;
+        c.t -= DT;
+        stepBody(body);
+        p.x += p.vx * DT;
+        p.y += p.vy * DT;
+    }
+    return -1;
+}
+// What a swing aimed at ang does to the death ball: { hit: does the swing reach it, v: the value of the ball's future after it (aiRollWorld) }
+function aiBatBallValue(me, c0, ang) {
+    const fx = snapshotFx(), b = Object.assign(new Ball(), ball), p = aiBatProxy(me), c = aiBatCast(c0, ang), self = aiEnemySnap(me), foes = aiFoes(me).map(aiEnemySnap);
+    let hit = false;
+    for (let n = 0; n < Math.round(BAT_T / DT) + 2 && !hit; n++) {
+        batStep(p, c, b);
+        hit = c.hits !== 0;
+        c.t -= DT;
+        b.step();
+        aiEnemyStep(self);
+        for (const e of foes)
+            aiEnemyStep(e);
+        p.x += p.vx * DT;
+        p.y += p.vy * DT;
+    }
+    restoreFx(fx);
+    return { hit, v: hit ? aiRollWorld(aiGoalSign(me), aiEnemySnap(me), b, foes) : 0 };
+}
+// Would this swing hit a teammate, or send the ball somewhere bad?
+function aiBatSafe(me, c, ang) {
+    for (const m of players)
+        if (m !== me && m.team === me.team && m.alive && Math.hypot(m.x - me.x, m.y - me.y) < BAT_REACH + m.r + 60 && aiBatHitTick(me, c, ang, aiEnemySnap(m), aiEnemyStep) >= 0)
+            return false;
+    if (!(me.onBall && me.tball === ball) && Math.hypot(ball.x - me.x, ball.y - me.y) < BAT_REACH + ball.r + 80) {
+        const r = aiBatBallValue(me, c, ang);
+        if (r.hit && r.v < -100)
+            return false;
+    }
+    return true;
+}
+function aiBatRelease(A, k, ang) { // let go of the key with the arrows pointing the way: the swing aims along them
+    const hx = Math.round(Math.cos(ang)), hy = Math.round(Math.sin(ang));
+    k.sp = false;
+    k.l = hx < 0;
+    k.r = hx > 0;
+    k.up = hy < 0;
+    k.dn = hy > 0;
+    A.sp = null;
+    A.spCool = 0.3;
+}
+// One tick of a charging bat: should it go now?
+function aiBatDecide(me, A, S, k, c) {
+    // 1) melee: a FULL charge that catches an enemy also overcharges them (their grapple is torn away and locked out)
+    if (c.charge >= BAT_OVERCHARGE_MIN - 0.01) {
+        let best = null;
+        for (const e of aiFoes(me)) {
+            if (Math.hypot(e.x - me.x, e.y - me.y) > BAT_REACH + e.r + AI_BAT_MELEE)
+                continue;
+            const ang = aiQuant(Math.atan2(e.y + e.vy * 0.06 - me.y, e.x + e.vx * 0.06 - me.x)), n = aiBatHitTick(me, c, ang, aiEnemySnap(e), aiEnemyStep);
+            if (n >= 0 && (!best || n < best.n))
+                best = { ang, n };
+        }
+        if (best && aiBatSafe(me, c, best.ang)) {
+            aiBatRelease(A, k, best.ang);
+            return true;
+        }
+    }
+    // 2) the ball: deflect a shot that would score on us (or kill us), or hit one into their goal / an enemy
+    if (S.n % 3 === 0 && !(me.onBall && me.tball === ball) && Math.hypot(ball.x - me.x, ball.y - me.y) < AI_BAT_SEE) {
+        const v0 = aiPushValue(me, ball, 0, 0, 0, false);
+        let best = null;
+        for (const [dx, dy] of AI_MARIO_DIRS) {
+            const ang = Math.atan2(dy, dx), r = aiBatBallValue(me, c, ang);
+            if (r.hit && (!best || r.v > best.v))
+                best = { v: r.v, ang };
+        }
+        if (best && ((best.v >= 200 && best.v - v0 >= 200) || (v0 <= -300 && best.v - v0 >= 300)) && aiBatSafe(me, c, best.ang)) {
+            aiBatRelease(A, k, best.ang);
+            return true;
+        }
+    }
+    return false;
+}
+function aiBatRun(me, A, k, S) {
+    const c = me.casting('bat');
+    if (!c) {
+        A.sp = null;
+        A.spCool = 0.2;
+        return;
+    }
+    S.n++;
+    if (!c.charging)
+        return;                                // the swing is running: nothing to hold
+    k.sp = true;                               // keep charging
+    aiBatDecide(me, A, S, k, c);
+}
+function aiSpBat(me, A, k) {
+    if (me.cd.bat > 0 || me.casts.length)
+        return;
+    k.sp = true;                               // start charging (and keep going: the swing is only let go for a reason)
+    A.sp = { id: 'bat', n: 0, keep: true };
+}
+
+// ---- BARBWIRE ----
+// Would hooking the nearest thing right now put the rope through `en` (in 0.04 s)? That is what the hook takes: the nearest thing in reach, no choice in it.
+function aiBarbLine(me, en, b) {
+    const near = aiNearest(me, b);
+    if (!near)
+        return false;
+    return distToSeg(en.x + en.vx * 0.04, en.y + en.vy * 0.04, me.x, me.y, near.p.x, near.p.y) < en.r + BARBWIRE_HALF_W - 4;
+}
+const aiBarbKill = (me, en) => { const e = ropeEnd(me); return !!e && distToSeg(en.x, en.y, me.x, me.y, e.x, e.y) < en.r + BARBWIRE_HALF_W; };
+// Keys of a barbwire jump (an invade jump that stops short of the crash): run up, grapple-jump to height, float over the enemy, and the moment a hook would put the rope through them, fire it and hold.
+function aiBarbKeys(me, en, B, k, b) {
+    B.t += DT;
+    if (B.fireT !== undefined) {               // the wire is out: hold it where it is
+        B.hold += DT;
+        k.sp = true;
+        k.z = true;
+        k.up = !me.ground;
+        if (B.hold > AI_BARB_HOLD || (!me.rope && !me.pending && B.hold > 0.2))
+            B.done = true;
+        return;
+    }
+    const taps = B.taps, jt = B.t - (B.run || 0), dx = en.x - me.x;
+    if (jt < 0) {
+        if (Math.abs(dx) > 10)
+            k[dx > 0 ? 'r' : 'l'] = true;
+        return;
+    }
+    k.up = jt < Math.max(AI_JUMP_HOLD, taps * AI_TAP_T + 0.2) || !me.ground && me.vy > 0 && me.y > en.y - 70; // (float while above them, so they stay below the rope)
+    if (taps && jt < taps * AI_TAP_T) {
+        const i = Math.floor(jt / AI_TAP_T);
+        k.z = i < taps && jt - i * AI_TAP_T < AI_TAP_ON;
+        k.x = true;
+        k[dx > 0 ? 'r' : 'l'] = Math.abs(dx) > 10;
+        return;
+    }
+    if (me.ground) {                           // taking off
+        k[dx > 0 ? 'r' : 'l'] = Math.abs(dx) > 10;
+        return;
+    }
+    const lead = dx + en.vx * 0.15 - me.vx * 0.1;  // line up over them
+    if (Math.abs(lead) > 6)
+        k[lead > 0 ? 'r' : 'l'] = true;
+    if (me.y < en.y - 12 && !me.rope && !me.pending && aiCanGrip(me) && aiBarbLine(me, en, b)) {
+        B.fireT = B.t;
+        B.hold = 0;
+        k.sp = true;
+        k.z = true;
+    }
+}
+function* aiBarbJob(me0, frozen, tgt, out) {
+    const S = aiSimNew(me0), en0 = aiEnemySnap(tgt);
+    let n = 0;
+    for (let i = 0; i < AI_PRE; i++) {
+        aiSimStep(S, frozen);
+        aiEnemyStep(en0);
+        if (aiDead(S))
+            return;
+    }
+    for (const run of AI_INVADE_RUNS) for (const taps of AI_BARB_TAPS) {
+        const V = aiSimFork(S), en = Object.assign({}, en0), B = { t: 0, taps, run };
+        for (let i = 0; i < 420; i++) {
+            const k = aiNoKeys();
+            aiBarbKeys(V.me, en, B, k, V.b);
+            const sc = aiSimStep(V, k);
+            aiEnemyStep(en);
+            if (aiDead(V) || (sc !== null && sc !== V.me.team))
+                break;
+            if (B.fireT !== undefined && aiBarbKill(V.me, en)) {
+                out.ok = true;
+                out.kind = 'barb';
+                out.taps = taps;
+                out.run = run;
+                return;
+            }
+            if (B.done || Math.hypot(V.me.x - en.x, V.me.y - en.y) < V.me.r + en.r + 2 || (V.me.ground && B.t > run + 0.3))
+                break;                         // the wire missed, or we crashed into them (a rope out then overcharges US), or we landed
+            if (++n % AI_SLICE === 0)
+                yield;
+        }
+    }
+}
+// Wire out by chance: an enemy close by happens to be right behind what the hook would take.
+function aiSpBarbwire(me, A, k) {
+    if (me.cd.barbwire > 0 || me.casts.length || me.onBall || me.rope || me.pending || !aiCanGrip(me))
+        return;
+    for (const e of aiFoes(me))
+        if (Math.hypot(e.x - me.x, e.y - me.y) < AI_BARB_NEAR && aiBarbLine(me, e, ball)) {
+            k.sp = true;
+            k.z = true;
+            A.sp = { id: 'barb', t: 0, keep: true };
+            return;
+        }
+}
+function aiBarbRun(me, A, k, S) {
+    S.t += DT;
+    k.sp = true;
+    k.z = true;
+    k.l = k.r = k.dn = false;                  // hold still: the line is what kills
+    if (S.t > AI_BARB_HOLD || (S.t > 0.2 && !me.rope && !me.pending) || !aiFoes(me).length) {
+        k.sp = false;
+        A.sp = null;
+        A.spCool = 0.6;
+    }
+}
+
+// ---- WARP ----
+const aiWarpHomeX = me => (aiLeft(me.team) ? NETX * AI_WARP_HOME : W - NETX * AI_WARP_HOME); // the back half of our side
+function aiWarpDanger(me) { // out invading, and the enemy is about to shoot (or a shot is on its way) and we are not about to deal with it
+    const s = aiSide(me), hx = aiWarpHomeX(me);
+    if (!((me.x - NETX) * s > 40 || Math.abs(me.x - hx) > AI_WARP_FAR))
+        return false;
+    if (aiCanGrip(me) && Math.hypot(ball.x - me.x, ball.y - me.y) < 260)
+        return false;
+    const holder = aiFoes(me).some(q => q.onBall && q.tball === ball);
+    return holder || aiForecast(ball).end === -aiGoalSign(me);
+}
+function aiSpWarp(me, A, k) {
+    const w = me.warp, hx = aiWarpHomeX(me);
+    if (w && me.cd.warp <= 0 && aiWarpDanger(me) && Math.hypot(ball.x - w.x, ball.y - w.y) > 140) {
+        k.z = false;                           // the rope goes first: a rope left on its pivot would snap us back from the far end
+        A.sp = { id: 'warpout', t: 0 };
+        return;
+    }
+    if (me.ground && !me.rope && !me.pending && Math.abs(me.x - hx) < 70 && (!w || (me.cd.warp > 0 && Math.abs(w.x - hx) > 160))) {
+        k.sp = true;                           // drop (or, during the cooldown, move) the marker here
+        A.spCool = 1;
+    }
+}
+function aiWarpOutRun(me, A, k, S) {
+    S.t += DT;
+    k.z = false;
+    if (S.t >= 2 * DT) {
+        if (me.warp && me.cd.warp <= 0)
+            k.sp = true;
+        A.sp = null;
+        A.spCool = 1;
+    }
+}
+
+// ---- EXPLODE ----
+// The kick explode() gives body q: [vx, vy] to add, or null when it is out of reach (the same maths).
+function aiBlastKick(me, q) {
+    const dx = q.x - me.x, dy = q.y - me.y, d = Math.hypot(dx, dy), reach = EXPLODE_R + q.r;
+    if (d > reach)
+        return null;
+    const nx = d > 1e-6 ? dx / d : 0, ny = d > 1e-6 ? dy / d : -1, power = Math.pow(1 - Math.min(1, d / reach), EXPLODE_FALLOFF);
+    let kick = EXPLODE_KICK_MIN + (EXPLODE_KICK_MAX - EXPLODE_KICK_MIN) * power;
+    const into = Math.min(0, q.vx * nx + q.vy * ny), mx = q.vx - into * nx, my = q.vy - into * ny, ms = Math.hypot(mx, my);
+    let ux = nx, uy = ny;
+    if (ms > 1e-6) {
+        const w = Math.min(1, ms / EXPLODE_AMP_SPEED) * EXPLODE_AMP_BLEND;
+        ux = nx * (1 - w) + (mx / ms) * w;
+        uy = ny * (1 - w) + (my / ms) * w;
+        const m = Math.hypot(ux, uy) || 1;
+        ux /= m;
+        uy /= m;
+        kick += ms * EXPLODE_AMP_GAIN;
+    }
+    return [ux * kick, uy * kick];
+}
+// Value of blasting now against not blasting: { v0, v1 }. b0 = the ball, foes = snapshots of the enemies.
+function aiExplodeValueFor(me, b0, foes) {
+    const atk = aiGoalSign(me), v0 = aiRollWorld(atk, aiEnemySnap(me), Object.assign(new Ball(), b0), foes.map(e => ({ ...e })));
+    const b = Object.assign(new Ball(), b0), sn = foes.map(e => ({ ...e }));
+    const kb = aiBlastKick(me, b);
+    if (kb) {
+        b.vx += kb[0];
+        b.vy += kb[1];
+        const s = Math.hypot(b.vx, b.vy);
+        if (s > BALL_VMAX && b.boost !== undefined)
+            b.boost = Math.max(b.boost, Math.min(1, (s - BALL_VMAX) / (PAD_MAX - BALL_VMAX)));
+    }
+    for (const e of sn) {
+        const ke = aiBlastKick(me, e);
+        if (ke) {
+            e.vx += ke[0];
+            e.vy += ke[1];
+        }
+    }
+    return { v0, v1: aiRollWorld(atk, aiEnemySnap(me), b, sn) };
+}
+function aiSpExplode(me, A, k) {
+    if (me.cd.explode > 0 || me.casts.length)
+        return;
+    const foes = aiFoes(me), R = EXPLODE_R + 30;
+    if (!foes.some(q => Math.hypot(q.x - me.x, q.y - me.y) < R + q.r) && Math.hypot(ball.x - me.x, ball.y - me.y) > R + ball.r)
+        return;                                // nothing in reach: the rollouts are not free
+    const r = aiExplodeValueFor(me, ball, foes.map(aiEnemySnap));
+    if (r.v1 >= AI_EXPLODE_MIN && r.v1 - r.v0 >= AI_EXPLODE_GAIN) {
+        k.sp = true;
+        if (me.onBall)
+            k.z = false;                       // a held ball is let go in the same tick: the rope would eat the kick
+        A.spCool = 0.5;
+    }
+}
+// An invade jump that ends up close to the enemy and the ball with a blast that pays off.
+function* aiBlastJob(me0, frozen, tgt, out) {
+    const S = aiSimNew(me0), en0 = aiEnemySnap(tgt);
+    let n = 0;
+    for (let i = 0; i < AI_PRE; i++) {
+        aiSimStep(S, frozen);
+        aiEnemyStep(en0);
+        if (aiDead(S))
+            return;
+    }
+    for (const run of AI_INVADE_RUNS) for (const taps of AI_INVADE_TAPS) {
+        const V = aiSimFork(S), en = Object.assign({}, en0), I = { t: 0, taps, run };
+        for (let i = 0; i < 420; i++) {
+            const k = aiNoKeys();
+            aiInvadeKeys(V.me, en, I, k);
+            const sc = aiSimStep(V, k);
+            aiEnemyStep(en);
+            if (aiDead(V) || (sc !== null && sc !== V.me.team))
+                break;
+            if (i % 4 === 0 && (Math.hypot(V.me.x - en.x, V.me.y - en.y) < EXPLODE_R + en.r - 10 || Math.hypot(V.me.x - V.b.x, V.me.y - V.b.y) < EXPLODE_R + V.b.r - 10)) {
+                const r = aiExplodeValueFor(V.me, V.b, [en]);
+                n += 12;
+                if (r.v1 >= AI_EXPLODE_MIN && r.v1 - r.v0 >= AI_EXPLODE_GAIN) {
+                    out.ok = true;
+                    out.kind = 'blast';
+                    out.taps = taps;
+                    out.run = run;
+                    return;
+                }
+            }
+            if (Math.hypot(V.me.x - en.x, V.me.y - en.y) < V.me.r + en.r + 2 || (V.me.ground && I.t > run + 0.3))
+                break;
+            if (++n % AI_SLICE === 0)
+                yield;
+        }
+    }
+}
+
+// ---- AWAKENED ----
+// Slam keys: run (and hop) at the ball so that the crash sends it on. I = { t, taps, jump }.
+function aiSlamKeys(me, b, I, k) {
+    I.t += DT;
+    const dx = b.x - me.x;
+    if (!I.jump) {
+        if (Math.abs(dx) > 4)
+            k[dx > 0 ? 'r' : 'l'] = true;
+        return;
+    }
+    k.up = I.t < Math.max(0.35, I.taps * AI_TAP_T + 0.25);
+    if (I.taps) {
+        const i = Math.floor(I.t / AI_TAP_T);
+        k.z = i < I.taps && I.t - i * AI_TAP_T < AI_TAP_ON;
+        k.x = I.t < I.taps * AI_TAP_T;
+    }
+    if (Math.abs(dx) > 4)
+        k[dx > 0 ? 'r' : 'l'] = true;
+}
+const AI_SLAM_STYLES = [{ jump: false, taps: 0 }, { jump: true, taps: 0 }, { jump: true, taps: 2 }, { jump: true, taps: 3 }];
+// Does a run at the ball (awake: its crash is x3 and it cannot kill us) send it into their goal or into an enemy?
+function* aiSlamJob(me0, frozen, out) {
+    const S = aiSimNew(me0), atk = aiGoalSign(me0);
+    let n = 0;
+    for (let i = 0; i < AI_PRE; i++)
+        aiSimStep(S, frozen);
+    const foes0 = aiFoes(me0).map(aiEnemySnap);
+    for (const st of AI_SLAM_STYLES) {
+        const V = aiSimFork(S), I = { t: 0, taps: st.taps, jump: st.jump }, fl = foes0.map(e => ({ ...e }));
+        for (let i = 0; i < 300; i++) {
+            const k = aiNoKeys();
+            aiSlamKeys(V.me, V.b, I, k);
+            const sc = aiSimStep(V, k);
+            for (const e of fl)
+                aiEnemyStep(e);
+            if (sc !== null)
+                break;
+            if (Math.hypot(V.me.x - V.b.x, V.me.y - V.b.y) < V.me.r + V.b.r) {
+                crashShot(V.me, V.b);          // the real crash maths: awake, so we live and it is hit x3
+                const v = aiRollWorld(atk, null, Object.assign(new Ball(), V.b), fl);
+                if (v >= AI_SLAM_MIN) {
+                    out.ok = true;
+                    out.taps = st.taps;
+                    out.jump = st.jump;
+                    out.v = v;
+                    return;
+                }
+                break;
+            }
+            if (V.me.ground && I.t > 0.4 && st.jump)
+                break;
+            if (++n % AI_SLICE === 0)
+                yield;
+        }
+    }
+}
+function aiSpAwakened(me, A, k) {
+    if (me.cd.awakened > 0 || me.awakeT > 0 || me.casts.length)
+        return;
+    const foes = aiFoes(me);
+    if (!foes.length)
+        return;
+    const near = foes.some(q => Math.hypot(q.x - me.x, q.y - me.y) < AI_AWAKE_SEE), loose = Math.hypot(ball.x - me.x, ball.y - me.y) < 320 && !players.some(q => q.onBall && q.tball === ball);
+    if (near || loose) {
+        k.sp = true;
+        A.spCool = 0.5;
+    }
+}
+// Every tick while awake. Slam the ball when a look-ahead says it works, otherwise ram an enemy: one with a rope out first (whoever has their grapple out when two players touch is the one overcharged, and we cannot be).
+function aiAwakeRun(me, A, k) {
+    const Z = A.aw || (A.aw = { t: 0, next: 0, job: null, slam: null });
+    Z.t += DT;
+    const free = AIB === ball && !players.some(q => q.onBall && q.tball === ball) && !me.onBall;
+    if (Z.slam) {                              // a slam in progress
+        const gap = Math.hypot(ball.x - me.x, ball.y - me.y);
+        Z.slam.t += DT;
+        if (Z.slam.t > 2.5 || !free || (gap < me.r + ball.r + 6 && Z.slam.t > 0.3)) {
+            Z.slam = null;
+            Z.next = Z.t + 0.3;
+        } else {
+            Object.assign(k, aiNoKeys());
+            aiSlamKeys(me, ball, Z.slam.I, k);
+            A.job = A.E = A.X = A.V = A.R = null;
+            return;
+        }
+    }
+    if (Z.job) {                               // a slam look-ahead is running
+        const fx = snapshotFx(), r = Z.job.gen.next();
+        restoreFx(fx);
+        if (r.done) {
+            const o = Z.job.out;
+            Z.job = null;
+            Z.next = Z.t + 0.5;
+            if (o.ok && free) {
+                Z.slam = { t: 0, I: { t: 0, taps: o.taps, jump: o.jump } };
+                A.job = A.E = A.X = A.V = A.R = null;
+                aiSlamKeys(me, ball, Z.slam.I, Object.assign(k, aiNoKeys()));
+                return;
+            }
+        }
+    } else if (free && Z.t >= Z.next && Math.abs(ball.x - me.x) < 700 && Math.hypot(ball.vx, ball.vy) < 700) {
+        const out = {};
+        Z.job = { gen: aiSlamJob(me, aiNoKeys(), out), out };
+    }
+    // chase: the nearest enemy
+    let tgt = null, bd = Infinity;
+    for (const e of aiFoes(me)) {
+        const d = Math.hypot(e.x - me.x, e.y - me.y) - (e.rope || e.pending || e.onBall ? 250 : 0);
+        if (d < bd) {
+            bd = d;
+            tgt = e;
+        }
+    }
+    if (!tgt)
+        return;
+    A.invCool = Math.min(A.invCool || 0, 0.3); // (the invade pause is for a careful AI: ten seconds of power are not for waiting around)
+    const dx = tgt.x - me.x, dy = tgt.y - me.y, d = Math.hypot(dx, dy), s = aiSide(me), cross = (tgt.x - NETX) * (me.x - NETX) < 0;
+    if (A.V || (A.job && A.job.kind === 'invade'))
+        return;                                // a look-ahead jump at them is under way: let it
+    if (me.ground && !me.onBall && aiCanGrip(me) && (cross || d > 170) && A.invCool <= 0 && !A.job && !A.R) {
+        A.out = {};
+        A.job = { kind: 'invade', gen: aiInvadeGen(me, aiNoKeys(), tgt, A.out), out: A.out, tgt, frozen: aiNoKeys(), age: 0, done: false };
+        Object.assign(k, aiNoKeys());
+        return;
+    }
+    if (A.job && A.job.kind !== 'invade')
+        A.job = null;
+    A.R = A.E = A.X = null;
+    Object.assign(k, aiNoKeys());              // run at them
+    if (Math.abs(dx) > 8)
+        k[dx > 0 ? 'r' : 'l'] = true;
+    k.up = dy < -50 || (!me.ground && dy < 10);
+}
+
+// ---- which look-ahead an invade runs, and its keys ----
+function* aiInvadeGen(me0, frozen, tgt, out) {
+    if (me0.has('barbwire') && me0.cd.barbwire <= 0)
+        yield* aiBarbJob(me0, frozen, tgt, out);
+    else if (me0.has('explode') && me0.cd.explode <= 0)
+        yield* aiBlastJob(me0, frozen, tgt, out);
+    else {
+        if (me0.has('awakened') && me0.awakeT > 0)
+            out.minV = 40;                     // awake: any hard contact will do (they are thrown x3)
+        yield* aiInvadeJob(me0, frozen, tgt, out);
+    }
+}
+function aiInvKeys(me, en, V, k) {
+    if (V.kind === 'barb') {
+        aiBarbKeys(me, en, V, k, ball);
+        return;
+    }
+    aiInvadeKeys(me, en, V, k);
+}
+// A 1v1 invade beyond "the enemy is holding the ball": the specials that want to be up close
+function aiInvadeEager(me, tgt) {
+    if (me.has('barbwire') && me.cd.barbwire <= 0)
+        return Math.abs(tgt.x - me.x) < 420;
+    if (me.has('bat')) {
+        const c = me.casting('bat');
+        return !!c && c.charging && c.charge >= 0.9 && Math.abs(tgt.x - me.x) < 450;
+    }
+    if (me.has('explode') && me.cd.explode <= 0)
+        return Math.hypot(tgt.x - ball.x, tgt.y - ball.y) < 300;
+    return false;
+}
+
+
 function aiSpecialRun(me, A, k) {
     const S = A.sp;
     if (S.id === 'mario') { // let go with the arrows still held: the shove fires
@@ -1140,14 +1701,25 @@ function aiSpecialRun(me, A, k) {
         A.spCool = 0.4;
     } else if (S.id === 'arrow')
         aiArrowRun(me, A, k, S);
+    else if (S.id === 'bat')
+        aiBatRun(me, A, k, S);
+    else if (S.id === 'barb')
+        aiBarbRun(me, A, k, S);
+    else if (S.id === 'warpout')
+        aiWarpOutRun(me, A, k, S);
     else
         A.sp = null;
 }
 function aiSpecial(me, A, k) {
     A.spCool = Math.max(0, (A.spCool || 0) - DT);
     if (me.stunT > 0) { A.sp = null; return; }
+    if (me.awakeT > 0 && me.has('awakened'))
+        aiAwakeRun(me, A, k);
+    else if (A.aw)
+        A.aw = null;
     if (A.sp) { aiSpecialRun(me, A, k); return; }
-    const busy = A.E || A.X || A.V; // a committed jump is in flight; a look-ahead is not
+    const id = me.slots()[0][1];
+    const busy = (A.E || A.X || A.V) && id !== 'explode' && id !== 'bat'; // a committed jump is in flight; a look-ahead is not. (A blast or a swing may go off mid-jump: that is what the jump is for)
     if (A.spCool > 0 || busy || (A.spT = (A.spT || 0) - 1) > 0)
         return;
 
@@ -1158,14 +1730,19 @@ function aiSpecial(me, A, k) {
         plinko: aiSpPlinko,
         marionette: aiSpMarionette,
         decoy: aiSpDecoy,
-        arrow: aiSpArrow
-    }[me.slots()[0][1]];
+        arrow: aiSpArrow,
+        bat: aiSpBat,
+        barbwire: aiSpBarbwire,
+        warp: aiSpWarp,
+        awakened: aiSpAwakened,
+        explode: aiSpExplode
+    }[id];
 
     if (f) {
         const before = A.sp;
         f(me, A, k);
-        if (A.sp !== before || k.sp)
-            A.job = null; // a special was started: drop the look-ahead
+        if ((A.sp !== before || k.sp) && !(A.sp && A.sp.keep))
+            A.job = null; // a special was started: drop the look-ahead (not for one that just charges up in the background)
     }
 }
 
@@ -1232,8 +1809,8 @@ function aiFree(i, me, A, k) { // keys for an AI that is not tethered
             A.V = null;                        // the target is gone, or the death ball is coming for us: stop, and let the normal logic dodge
             A.invCool = 2;
         } else {
-            aiInvadeKeys(me, A.V.tgt, A.V, k);
-            if (me.ground && A.V.t > (A.V.run || 0) + 0.3) {
+            aiInvKeys(me, A.V.tgt, A.V, k);
+            if ((me.ground && A.V.t > (A.V.run || 0) + 0.3) || A.V.done) {
                 A.V = null;
                 A.invCool = AI_INVADE_CD;
                 A.cool = 0.3;
@@ -1251,9 +1828,9 @@ function aiFree(i, me, A, k) { // keys for an AI that is not tethered
         if (J.done && J.age >= AI_PRE) {
             A.job = null;
             if (J.out.ok && J.tgt.alive) {
-                A.V = { t: 0, taps: J.out.taps, run: J.out.run, tgt: J.tgt };
+                A.V = { t: 0, taps: J.out.taps, run: J.out.run, tgt: J.tgt, kind: J.out.kind };
                 aiStats.invades++;
-                aiInvadeKeys(me, A.V.tgt, A.V, k);
+                aiInvKeys(me, A.V.tgt, A.V, k);
             } else
                 A.invCool = 1;                 // nothing lands: look again in a second
         }
@@ -1346,7 +1923,7 @@ function aiFree(i, me, A, k) { // keys for an AI that is not tethered
             const tgt = aiInvadeTarget(me, b);
             if (tgt) {                         // look for a jump that crashes into them (the keys we are pressing now are what the look-ahead assumes we keep pressing)
                 A.out = {};
-                A.job = { kind: 'invade', gen: aiInvadeJob(me, aiNoKeys(), tgt, A.out), out: A.out, tgt, frozen: aiNoKeys(), age: 0, done: false };
+                A.job = { kind: 'invade', gen: aiInvadeGen(me, aiNoKeys(), tgt, A.out), out: A.out, tgt, frozen: aiNoKeys(), age: 0, done: false };
                 Object.assign(k, aiNoKeys());  // stand still while it runs: the look-ahead plans from exactly here, so the real jump must start from exactly here
                 A.invIdle = 0;
             }
@@ -1358,7 +1935,7 @@ function aiFree(i, me, A, k) { // keys for an AI that is not tethered
         const tgt = aiInvadeTarget(me, b);
         if (me.ground && grip0 && tgt && A.invCool <= 0 && aiInvadeSafe(me)) {
             A.out = {};
-            A.job = { kind: 'invade', gen: aiInvadeJob(me, aiNoKeys(), tgt, A.out), out: A.out, tgt, frozen: aiNoKeys(), age: 0, done: false };
+            A.job = { kind: 'invade', gen: aiInvadeGen(me, aiNoKeys(), tgt, A.out), out: A.out, tgt, frozen: aiNoKeys(), age: 0, done: false };
             Object.assign(k, aiNoKeys());
             return;
         }
@@ -1371,9 +1948,9 @@ function aiFree(i, me, A, k) { // keys for an AI that is not tethered
         }
     } else if (AI_AWAY && !players.some(q => q !== me && q.team === me.team) && grip0 && me.ground && A.invCool <= 0 && aiInvadeSafe(me)) { // 1v1: an enemy holding the ball is busy: go and crash them
         const tgt = aiInvadeTarget(me, b);
-        if (tgt && tgt.onBall) {
+        if (tgt && (tgt.onBall || aiInvadeEager(me, tgt))) {
             A.out = {};
-            A.job = { kind: 'invade', gen: aiInvadeJob(me, aiNoKeys(), tgt, A.out), out: A.out, tgt, frozen: aiNoKeys(), age: 0, done: false };
+            A.job = { kind: 'invade', gen: aiInvadeGen(me, aiNoKeys(), tgt, A.out), out: A.out, tgt, frozen: aiNoKeys(), age: 0, done: false };
             Object.assign(k, aiNoKeys());
             return;
         }
@@ -1489,8 +2066,10 @@ function aiDrive(i) {
         if (A.job && A.job.kind === 'held') {
             aiAdvance(A);
             if (A.job.done && A.job.age >= AI_PRE_H) {
-                if (A.job.out.plan)
+                if (A.job.out.plan) {
                     hs.plan = A.job.out.plan;
+                    hs.warp = !!A.job.out.warp;
+                }
                 if (!A.job.out.race && A.job.out.val >= AI_COMMIT_V && !aiCanDash(me, hs) && /^(shoot|sling|loop)/.test(hs.plan))
                     hs.commit = true;           // a shot that works in the look-ahead, and no dash to commit us: stop second-guessing it
                 A.raceMode = !!A.job.out.race;  // (if we let go during a race, it is to go and deal with the other ball: no sulking cooldown)

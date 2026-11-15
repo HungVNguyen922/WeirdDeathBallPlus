@@ -1,6 +1,6 @@
 // Does each special actually help the AI? Run: node js/test/ai-special-test.js
 const { loadSim } = require('../server/sim-node.js');
-const SP = ['dash', 'plinko', 'marionette', 'decoy', 'arrow'], TICKS = 120 * 600;
+const SP = ['dash', 'plinko', 'marionette', 'decoy', 'arrow', 'bat', 'barbwire', 'warp', 'awakened', 'explode'], TICKS = 120 * (+process.env.SECS || 600); // SECS=60 for a quick look
 function run(special, seat) {
     const sim = loadSim(), other = 1 - seat;
     sim.run(`swapOn = false; resetMatch(); ai[0].on = true; ai[1].on = true;
