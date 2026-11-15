@@ -166,8 +166,11 @@ const gameMenu = (() => {
         campBtn.addEventListener('click', () => {
             if (net.on)
                 return;
-            if (campaign.on)
+            if (campaign.on) {
+                if (!confirm('Quit the campaign? The run is lost.'))
+                    return;
                 campaignStop(true);
+            }
             else
                 campaignStart();
             labelCamp();

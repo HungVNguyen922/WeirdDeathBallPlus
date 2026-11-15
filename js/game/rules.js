@@ -191,6 +191,8 @@ function newRound() {
     ai.forEach((a, i) => aiReset(i)); // forget any look-ahead / plan from the last round
     players.forEach(p => p.reset()); 
     ball.reset(); 
+    if (campaignOn())
+        campaignSpawnBall(); // the ball starts at the top of the net and falls
     sawReset(); 
     events.onNewRound(); 
 }
@@ -198,6 +200,11 @@ function point(t, why) {
     score[t]++;
     events.onPoint(t, why);
     over = score[t] >= goalOf(t);
+    if (campaignOn()) {
+        campaignOnPoint(t);
+        if (!over)
+            return campaignRespawn(); // the stage goes on: no pause, no new round
+    }
     msg = `${t === 0 ? 'Blue' : 'Red'} ${why}` + (over ? (campaignOn() ? campaignOverText(t) : ' - wins the match!') : '');
     pause = over ? WIN_PAUSE : POINT_PAUSE;
 }
@@ -424,8 +431,12 @@ function update() {
     }
     const teamAlive = t => players.some(p => p.team === t && p.alive); // a team is out when all its players are dead
     if (!teamAlive(0) && !teamAlive(1)) {
-        msg = 'Double KO';
-        pause = 1.6;
+        if (campaignOn())
+            campaignRespawn();
+        else {
+            msg = 'Double KO';
+            pause = 1.6;
+        }
     }
     else if (!teamAlive(0))
         point(1, 'wipes out the other team!');

@@ -41,6 +41,8 @@ class Player {
         this.special = 'dash'; // chosen special ability (see SPECIALS)
         this.special2 = 'plinko'; // second special (only used while twoSpecials is on; never the same as `special`)
         this.prevSp2 = false;
+        this.dual = false; // campaign boss: has both specials without the two-specials mode
+        this.dashN = 1; this.dashCut = [0, 0]; // campaign boss: number of separate dashes (1 or 2), and how many seconds each one's cooldown has been cut
         this.warp = null; // Warp: the placed marker { x, y }, or null (replaced, never edited in place, so the AI's shallow copies are safe)
         this.awakeT = 0; // Awakened: seconds of power-up left (0 = not awake)
         this.exploT = 0; // Explode: seconds left in which a death refunds the cooldown (0 = no blast to reward)
@@ -84,8 +86,9 @@ class Player {
         this.gjN = 0; this.gjT = 99;               // grapple-jump chain: jumps so far, seconds since the last one
         this.driveT = 0; this.driveAcc = 0; this.driveVmax = 0; // the grapple-jump drive still running (see GJ_DRIVE_T): seconds left, and its acceleration (u/s^2)
         this.dashReady = true; // one dash per trip off the floor
+        this.dash2Ready = true; // (the boss' second dash)
         this.tball = null;
-        this.cd = { dash: 0, plinko: 0, marionette: 0, decoy: 0, arrow: 0, bat: 0, barbwire: 0, warp: 0, awakened: 0, explode: 0 }; // per-ability cooldown remaining (s)
+        this.cd = { dash: 0, dash2: 0, plinko: 0, marionette: 0, decoy: 0, arrow: 0, bat: 0, barbwire: 0, warp: 0, awakened: 0, explode: 0 }; // per-ability cooldown remaining (s)
         this.warp = null; // a marker never survives the round
         this.warpFx = null;
         for (const id in ABILITY)
@@ -112,7 +115,12 @@ class Player {
     slots() {
         if (twoSpecials && this.special === 'fighter' && this.special2 === 'fighter') return [['sp', 'fighter'], ['sp2', 'fighter']];
         const s1 = this.special === 'fighter' ? 'dash' : this.special; // a stray Fighter outside its mode counts as Dash
-        return twoSpecials && this.special2 && this.special2 !== 'fighter' && this.special2 !== s1 ? [['sp', s1], ['sp2', this.special2]] : [['sp', s1]];
+        return (twoSpecials || this.dual) && this.special2 && this.special2 !== 'fighter' && this.special2 !== s1 ? [['sp', s1], ['sp2', this.special2]] : [['sp', s1]];
+    }
+    dashSlot() { // which dash can go right now: 0 = the normal one, 1 = a boss's second one, -1 = none
+        if (this.dashReady && this.cd.dash <= 0)
+            return 0;
+        return this.dashN > 1 && this.dash2Ready && this.cd.dash2 <= 0 ? 1 : -1;
     }
     has(id) { return this.slots().some(s => s[1] === id); }
     casting(type) { return this.casts.find(c => c.type === type) || null; } // the running cast of this kind, or null
@@ -124,8 +132,10 @@ class Player {
     get crashK() { return this.awakeT > 0 ? AWAKENED_CRASH : 1; } // Awakened: multiplier on the push your crashes give to balls, decoys and players
     // Tick the cooldowns, effect timers and the per-special bookkeeping (markers, power-ups) that need no input.
     tickTimers() {
-        if (this.ground) // Dash: one use, refilled whenever the player is on the floor
+        if (this.ground) { // Dash: one use, refilled whenever the player is on the floor
             this.dashReady = true;
+            this.dash2Ready = true;
+        }
         for (const id in this.cd)
             this.cd[id] = Math.max(0, this.cd[id] - DT);
         this.dashT = Math.max(0, this.dashT - DT);

@@ -557,7 +557,8 @@ const AI_TAP_T = 0.17, AI_TAP_ON = 0.13; // one tap every 0.17 s, the grapple do
 const aiSide = me => (aiLeft(me.team) ? 1 : -1); // +1: we defend the left goal and attack to the right
 const aiNoKeys = () => ({ l: false, r: false, up: false, dn: false, z: false, x: false, sp: false, sp2: false });
 const aiNearest = (me, b) => me.candidates(me.sim ? b : ball).reduce((m, o) => (!m || o.d < m.d ? o : m), null); // (a planning copy only knows the body it plans with; the real game also offers the death ball and every decoy)
-const aiCanDash = (me, hs) => me.special === 'dash' && me.dashReady && me.cd.dash <= 0 && !(hs && hs.noDash); // hs.noDash: this latch shoots with the rope only
+const aiDashKey = me => (me.slots().find(s => s[1] === 'dash') || ['sp'])[0]; // the key the dash is on (a campaign boss may have it on the second key)
+const aiCanDash = (me, hs) => me.has('dash') && me.dashSlot() >= 0 && !(hs && hs.noDash); // hs.noDash: this latch shoots with the rope only
 const aiCanGrip = me => me.gCool <= 0 && me.gCharge > AI_GRIP_MIN; // the grapple meter: enough left to latch on and do something with it
 
 // Keys for a tethered AI. hs = { t: seconds since the latch, plan, dashT: when we dashed (or null), n: tick counter }.
@@ -580,7 +581,7 @@ function aiHeldKeys(me, b, hs, k) {
         k.up = ty < 0.3;
     }
     if (dashPlan && hs.dashT === null && hs.t >= 0.04 && aiCanDash(me, hs)) { // the dash direction is whatever arrows are held when the key goes down
-        k.sp = true;
+        k[aiDashKey(me)] = true;
         k.up = plan === 'shootU';
         k.r = s > 0;
         k.l = s < 0;
@@ -588,7 +589,7 @@ function aiHeldKeys(me, b, hs, k) {
     }
     else if (AI_LOOP_DASH && loop && hs.dashT === null && hs.t >= 0.3 && aiCanDash(me, hs)) { // dash along the orbit's tangent to keep the loop fast
         const rx = me.x - tb.x, ry = me.y - tb.y, d = Math.hypot(rx, ry) || 1, sp = plan === 'loopO' ? s : -s, tx = sp * -ry / d, ty = sp * rx / d;
-        k.sp = true; k.r = tx > 0.3; k.l = tx < -0.3; k.up = ty < -0.3; k.dn = ty > 0.3;
+        k[aiDashKey(me)] = true; k.r = tx > 0.3; k.l = tx < -0.3; k.up = ty < -0.3; k.dn = ty > 0.3;
         hs.dashT = hs.t;
     }
     if ((shoot || loop) && hs.n % 2 === 0 && (hs.dashT !== null ? hs.t - hs.dashT > 0.14 : hs.t > (loop ? 0.35 : 0.4)) && (aiFlight(tb, me.team) || aiBallHit(tb, me) >= AI_HIT_MIN))
@@ -874,6 +875,7 @@ function* aiHeldJob(me0, hs0, out) { // the best held plan from here (after the 
                         kk.r = dk.dir > 0;
                         kk.up = dk.up;
                     }
+                    const pv = V.b.vy > 0 ? Math.atan2(V.b.vy, Math.abs(V.b.vx)) : 0; // how steeply the ball is falling (for the plunge preference below)
                     const sc = aiSimStep(V, kk);
                     minD = Math.min(minD, aiGap(V));
                     minY = Math.min(minY, V.me.y);
@@ -884,9 +886,10 @@ function* aiHeldJob(me0, hs0, out) { // the best held plan from here (after the 
                         break;
                     }
                     if (sc !== null) {
-                        if (sc === V.me.team)
+                        if (sc === V.me.team) {
                             scoreT = relT + j + 1;
-                        else
+                            v += (ai[V.me.id].plunge || 0) * Math.min(1, pv / (Math.PI / 3)); // plunge shots (a boss trait, ai[i].plunge): a score that comes down steeply is worth more
+                        } else
                             v -= 500;                  // the release ended in OUR goal (the swing / the toss went in): as bad as it gets
                         break;
                     }
@@ -1146,12 +1149,12 @@ function aiSpDecoy(me, A, k) {
 
 // ---- DASH (the loop dash is in aiHeldKeys): get back to a slow, far-away ball quickly ----
 function aiSpDash(me, A, k) {
-    if (!me.dashReady || me.cd.dash > 0 || me.onBall || me.casts.length || !me.ground || !aiCanGrip(me))
+    if (me.dashSlot() < 0 || me.onBall || me.casts.length || !me.ground || !aiCanGrip(me))
         return;
     const b = AIB, dx = b.x - me.x;
     if ((b.x - NETX) * aiSide(me) >= 40 || Math.abs(dx) < 650 || Math.hypot(b.vx, b.vy) > 200)
         return;
-    k.sp = true; k.r = dx > 0; k.l = dx < 0; k.up = false; k.dn = false;
+    k[aiDashKey(me)] = true; k.r = dx > 0; k.l = dx < 0; k.up = false; k.dn = false;
     A.spCool = 1;
 }
 

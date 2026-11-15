@@ -1,29 +1,47 @@
 // CAMPAIGN - solo play: six stages, one boss each, in the style of Touhou's stage list. You are Blue (seat 0), the boss is Red (seat 1, the computer).
-// Win a stage by scoring its `goal` points before the boss scores its `lose` points; then the next stage starts with a fresh score and the next boss. Lose a stage and it restarts
-// (the boss' score and yours reset; `continues` counts the retries). Clear stage 6 and the campaign is over: the menu settings it borrowed come back.
-// Offline only, never saved: a plain local mode that sits on top of rules.js (which asks goalOf() for the points a team needs and calls campaignAfterOver() when a stage ends).
-// Load after ai.js. To give a boss its own abilities later, add fields to its entry in CAMPAIGN_STAGES and read them in campaignApply() (and in the AI if it needs new behaviour).
+// It is ONE LONG RUN: there is no restart (R is off, and the menu button asks before it quits). Win a stage by scoring its `goal` points before the boss scores the same number; then the
+// next stage starts with a fresh score, its own net, and the next boss. LOSE a stage and the whole run starts again from stage 1 (`continues` counts the tries).
+// Points do not end the round: after a point the ball respawns at the top of the net and falls down the net line, anyone who was killed respawns at once, and play carries on.
+// Offline only, never saved: a plain local mode that sits on top of rules.js (goalOf(), point(), newRound()) and ai.js (aiPickSpecial, ai[i].lvl / .plunge, aiLag).
+// Load after ai.js. A boss is one entry of CAMPAIGN_STAGES; campaignApply() puts it into the game. Add fields there for new bosses and read them in campaignApply().
 const CAMPAIGN_STAGES = [
-    // goal = points YOU need to clear the stage, lose = points the boss needs to beat you (defaults to goal), special = the boss' ability (any id the AI knows, AI_SPECIAL_POOL),
-    // lvl = how sharp the boss is (0..1; see aiLag in ai.js: lower = a longer reaction delay)
-    { name: 'Stage 1', boss: 'Boss 1', goal: 5, special: 'dash',     lvl: 0.35 },
-    { name: 'Stage 2', boss: 'Boss 2', goal: 5, special: 'arrow',    lvl: 0.5 },
-    { name: 'Stage 3', boss: 'Boss 3', goal: 5, special: 'bat',      lvl: 0.65 },
-    { name: 'Stage 4', boss: 'Boss 4', goal: 7, special: 'explode',  lvl: 0.8 },
-    { name: 'Stage 5', boss: 'Boss 5', goal: 7, special: 'barbwire', lvl: 0.9 },
-    { name: 'Stage 6', boss: 'Boss 6', goal: 9, special: 'awakened', lvl: 1 },
+    // name / boss: shown to the player (placeholders for most).
+    // goal: points to clear the stage = points the boss needs to beat you. gap: the net's gap at the top (NET_GAP): 4*PL = the classic net, a smaller gap = a taller net, H = no net.
+    // special: the boss' ability (any id the AI knows, AI_SPECIAL_POOL). special2: a second one on the boss' second key (the AI uses dash from either key). dashes: 2 = a second, separate dash.
+    // gimmick: 'dashCut' = every point (either way) shaves 0.5 s off one of her two dash cooldowns, picked at random.   plunge: how much the AI likes shots that come down steeply (0 = no preference).
+    // lvl: how sharp the boss is (0..1; a lower level reacts later, see aiLag in ai.js).
+    { name: 'Stage 1', boss: 'Boss 1', goal: 5, gap: 2 * PL, special: 'dash', dashes: 2, gimmick: 'dashCut', plunge: 120, lvl: 0.4 },
+    { name: 'Stage 2', boss: 'Boss 2', goal: 5, gap: 2 * PL, special: 'arrow', special2: 'dash', lvl: 0.55 },
+    { name: 'Stage 3', boss: 'Boss 3', goal: 5, gap: 4 * PL, special: 'bat', lvl: 0.65 },
+    { name: 'Stage 4', boss: 'Boss 4', goal: 7, gap: 4 * PL, special: 'explode', lvl: 0.8 },
+    { name: 'Stage 5', boss: 'Boss 5', goal: 7, gap: 4 * PL, special: 'bat', special2: 'decoy',lvl: 0.9 },
+    { name: 'Stage 6', boss: 'Boss 6', goal: 9, gap: 4 * PL, special: 'awakened', special2: 'marionette', lvl: 1 },
 ];
 const campaign = { on: false, stage: 0, continues: 0, won: null, clear: false, saved: null }; // won = who took the stage that just ended (0 = you, 1 = the boss); clear = the last stage was just beaten
 const campaignStage = () => CAMPAIGN_STAGES[Math.min(campaign.stage, CAMPAIGN_STAGES.length - 1)];
 const campaignGoal = () => campaignStage().goal;
 const campaignLose = () => campaignStage().lose || campaignStage().goal;
-// The boss' settings for the current stage. Called whenever a stage starts (and again on a retry).
+function campaignBossReset() { // the boss' extra mechanics back to the normal game
+    const b = allPlayers[1];
+    b.dual = false;
+    b.dashN = 1;
+    b.dashCut = [0, 0];
+    ai[1].lvl = 1;
+    ai[1].plunge = 0;
+}
+// The boss' settings and the net for the current stage. Called whenever a stage starts (and again when the run starts over).
 function campaignApply() {
-    const s = campaignStage();
+    const s = campaignStage(), b = allPlayers[1];
     ai[0].on = false;
     ai[1].on = true;
     ai[1].lvl = s.lvl;
-    allPlayers[1].special = s.special;
+    ai[1].plunge = s.plunge || 0;
+    b.special = s.special;
+    b.special2 = s.special2 || 'plinko';
+    b.dual = !!s.special2;
+    b.dashN = s.dashes || 1;
+    b.dashCut = [0, 0];
+    setNetGap(s.gap);
 }
 function campaignStart() {
     if (campaign.on)
@@ -48,7 +66,8 @@ function campaignStop(restore = true) {
     campaign.on = false;
     const s = campaign.saved;
     campaign.saved = null;
-    ai[1].lvl = 1;
+    campaignBossReset();
+    setNetGap(NET_GAP_CLASSIC);
     if (restore && s) {
         swapOn = s.swapOn;
         pickFixed = s.pickFixed;
@@ -68,9 +87,9 @@ const campaignAbort = () => campaignStop(false); // a setter in rules.js that ch
 function campaignOverText(t) {
     campaign.won = t;
     campaign.clear = t === 0 && campaign.stage >= CAMPAIGN_STAGES.length - 1;
-    return t === 0 ? (campaign.clear ? ' - CAMPAIGN CLEAR!' : ' - stage clear!') : ' - you lose! retry';
+    return t === 0 ? (campaign.clear ? ' - CAMPAIGN CLEAR!' : ' - stage clear!') : ' - you lose! back to stage 1';
 }
-// The WIN_PAUSE after a stage ended is over: on to the next stage, the same one again, or back to normal play after the last. Runs before the new round is set up.
+// The WIN_PAUSE after a stage ended is over: on to the next stage, or (a loss) back to the very first one, or back to normal play after the last. Runs before the new round is set up.
 function campaignAfterOver() {
     if (campaign.won === 0) {
         if (campaign.clear) {
@@ -78,7 +97,43 @@ function campaignAfterOver() {
             return;
         }
         campaign.stage++;
-    } else
+    } else {
+        campaign.stage = 0;                    // one long run: a lost stage means starting over
         campaign.continues++;
+    }
     campaignApply();
+}
+// ---- every point (either way), called from rules.js point() before the next round starts ----
+function campaignOnPoint(t) {
+    const s = campaignStage(), b = allPlayers[1];
+    if (s.gimmick === 'dashCut') { // one of her two dashes, at random, comes back 0.5 s sooner for good (and the one that is cooling down right now is helped too)
+        const i = Math.random() < 0.5 ? 0 : 1, id = i ? 'dash2' : 'dash';
+        b.dashCut[i] = Math.min(b.dashCut[i] + 1, DASH_COOLDOWN - 1);
+        b.cd[id] = Math.max(0, b.cd[id] - 1);
+    }
+}
+// Where the ball appears: the top of the net, falling down the net line (a little sideways drift so it is not always the same).
+function campaignSpawnBall() {
+    ball.x = NETX;
+    ball.y = Math.max(ball.r + 6, Math.min(NET_GAP, 3 * PL) - ball.r);
+    ball.vx = (Math.random() - 0.5) * 80;
+    ball.vy = 0;
+}
+// A point that does not end the stage: no pause, no new round. The ball respawns, whoever was killed comes back at their spawn, everything else carries on.
+function campaignRespawn() {
+    for (const p of players) {
+        if (p.onBall || p.tball) { // let go of the old ball (it is about to be moved)
+            p.onBall = false;
+            p.tball = null;
+            p.rope = null;
+            p.pending = null;
+        }
+        if (!p.alive)
+            p.reset();
+    }
+    decoys.length = 0;
+    ball.reset();
+    campaignSpawnBall();
+    ai.forEach((a, i) => aiReset(i));          // forget plans made for the old ball
+    events.onNewRound();
 }

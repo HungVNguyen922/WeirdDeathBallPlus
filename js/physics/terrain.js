@@ -9,7 +9,9 @@ for (let i = 0; i < PEAK.length - 1; i++)
 // the wall, so it never moves with the floor. Two faces per jut: the underside (over the goal) and the inner side.
 // The net: a wall down the middle for players (the ball ignores it) with a gap at the top, NET_GAP = 2 player lengths tall, so players can cross to the
 // enemy side. NETSEGS is the solid part: from the bottom of the gap down to the floor. NET_T = 0: the wall sits exactly on the net line.
-const NET_GAP = 4 * PL, NET_T = 0, NETSEGS = [[NETX, NET_GAP, NETX, H]];
+let NET_GAP = 4 * PL;
+const NET_GAP_CLASSIC = NET_GAP, NET_T = 0, NETSEGS = [[NETX, NET_GAP, NETX, H]];
+function setNetGap(g) { NET_GAP = g; NETSEGS[0][1] = g; } // the campaign sets the net's height per stage (a smaller gap = a taller net; H = no net at all)
 const LEDGE_T = 3, LEDGES = [[0, GOAL_Y0, PL, GOAL_Y0], [PL, 0, PL, GOAL_Y0], [W, GOAL_Y0, W - PL, GOAL_Y0], [W - PL, 0, W - PL, GOAL_Y0]];
 // ---- Out-of-bounds tunnels. Past each goal opening the ball enters a tunnel (the jut's underside carries on as its ceiling). The floor starts at the goal lip
 // and slopes DOWN toward the threshold line, so any ball that falls out there is guided to it. The ball scores only when it crosses the threshold, OUT_D (5 player

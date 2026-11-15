@@ -99,7 +99,7 @@ function setKey(e, v) {
         setAI(+digit[1] - 1, !ai[+digit[1] - 1].on);
     if (v && !e.repeat && key === 't')
         setTeams(teamSize === 2 ? 1 : 2);
-    if (v && key === 'r')
+    if (v && key === 'r' && !campaignOn()) // (no restart in the middle of a campaign run)
         resetMatch();
 }
 window.addEventListener('keydown', e => setKey(e, true));

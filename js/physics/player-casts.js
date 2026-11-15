@@ -25,7 +25,7 @@ mixin(Player, {
         if (AIMING.includes(id) && this.casts.some(c => AIMING.includes(c.type)))
             return false; // two aiming casts would fight over the same arrow keys
         let c = null;
-        if (id === 'dash' && this.dashReady && this.cd.dash <= 0 && (hx || hy) && !(this.ground && !hx && hy > 0)) // pushing straight down into the floor does not use it up
+        if (id === 'dash' && this.dashSlot() >= 0 && (hx || hy) && !(this.ground && !hx && hy > 0)) // pushing straight down into the floor does not use it up
             c = { type: 'dash', t: DASH_CAST, t0: DASH_CAST, hx, hy };
         else if (id === 'plinko' && this.cd.plinko <= 0)
             c = { type: 'plinko', t: PLINKO_CAST, t0: PLINKO_CAST, hx, hy, x: this.x, y: this.y };
@@ -154,7 +154,8 @@ mixin(Player, {
             c.t -= DT;
         if (this.casts.includes(c) && c.t <= 0) {
             this.endCast(c);
-            if (c.type === 'dash' && this.dashReady) {
+            if (c.type === 'dash' && this.dashSlot() >= 0) {
+                const ds = this.dashSlot(); // which of the (up to two) dashes goes
                 const m = Math.hypot(c.hx, c.hy), ux = c.hx / m, uy = c.hy / m;
                 if (ux && this.vx * ux < 0)
                     this.vx = 0; // cancel what we were doing against the dash
@@ -162,8 +163,13 @@ mixin(Player, {
                     this.vy = 0;
                 this.vx += ux * DASH_V;
                 this.vy += uy * DASH_V;
-                this.dashReady = false;
-                this.cd.dash = DASH_COOLDOWN;
+                if (ds) {
+                    this.dash2Ready = false;
+                    this.cd.dash2 = Math.max(0.5, DASH_COOLDOWN - this.dashCut[1]);
+                } else {
+                    this.dashReady = false;
+                    this.cd.dash = Math.max(0.5, DASH_COOLDOWN - this.dashCut[0]);
+                }
                 this.dashT = DASH_FX;
                 this.dashDir = [ux, uy];
             } else if (c.type === 'plinko') {
