@@ -47,7 +47,7 @@ function drawBalls() { // speed lines, decoys, then the death ball on top
         drawTrail(d);
     for (const d of decoys) { // decoys look exactly like the death ball (under it), plus an optional ring in their caster's color
         drawBall(d);
-        if (DECOY_TELL) {
+        if (DECOY_TELL || d.swarm) { // (a swarm ball always wears its owner's ring, so you can tell it from the real one)
             cx.save();
             cx.strokeStyle = d.team === 0 ? '#42a5f5' : '#ef5350'; cx.lineWidth = 2; cx.globalAlpha = 0.9;
             cx.setLineDash([4, 4]); cx.lineDashOffset = -performance.now() / 80;
@@ -57,6 +57,7 @@ function drawBalls() { // speed lines, decoys, then the death ball on top
     }
     drawBall(ball);
     drawPull(ball);
+    for (const d of decoys) if (d.swarm) drawPull(d);
 }
 function drawMessage() { // round / match banner
     cx.textAlign = 'center';

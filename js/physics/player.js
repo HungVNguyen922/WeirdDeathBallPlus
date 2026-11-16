@@ -72,6 +72,7 @@ class Player {
         this.rope = null;
         this.pending = null;
         this.awakeT = 0; // Awakened never survives the round
+        this.invT = 0; // campaign: seconds of spawn protection left (nothing that kills can touch you)
         this.smokeT = 0; // neither does the smog
         this.pongT = 0; // Pong never survives the round either
         this.mineFx = null;

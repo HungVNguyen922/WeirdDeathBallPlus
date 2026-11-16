@@ -40,8 +40,19 @@ function removeDecoy(d) { // gone (recast, fell out, round over): anyone tethere
             p.tball = null;
         }
 }
-function spawnDecoy(owner, x, y) { // one decoy per player: a new one replaces that player's old one
-    for (const d of decoys.filter(d => d.owner === owner))
+function spawnSwarmBall(owner, x) { // the campaign's swarm: an extra death ball that kills the other team on touch, never scores, and does not replace anything
+    const d = new Ball();
+    d.x = x; d.y = d.r + 10;
+    d.decoy = true;
+    d.swarm = true;
+    d.age = 0;
+    d.team = owner.team;
+    d.owner = owner;
+    decoys.push(d);
+    return d;
+}
+function spawnDecoy(owner, x, y) { // one decoy per player: a new one replaces that player's old one (a swarm ball is not a decoy)
+    for (const d of decoys.filter(d => d.owner === owner && !d.swarm))
         removeDecoy(d);
     const d = new Ball();
     d.x = x; d.y = y;

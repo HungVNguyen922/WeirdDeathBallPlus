@@ -3,21 +3,39 @@
 // next stage starts with a fresh score, its own net, and the next boss. LOSE a stage and the whole run starts again from stage 1 (`continues` counts the tries).
 // Points do not end the round: after a point the ball respawns at the top of the net and falls down the net line, anyone who was killed respawns at once, and play carries on.
 // Offline only, never saved: a plain local mode that sits on top of rules.js (goalOf(), point(), newRound()) and ai.js (aiPickSpecial, ai[i].lvl / .plunge, aiLag).
+// ROGUELIKE LOADOUT: the campaign is always a two-special game. Before stage 1 you are offered 3 random specials and keep one; before stage 2 you are offered 3 more (never the one
+// you have) for your second key. After that the loadout is fixed for the run (the free-swap menu is off). A new run (after a loss) drafts again. Every stage opens with a banner.
 // Load after ai.js. A boss is one entry of CAMPAIGN_STAGES; campaignApply() puts it into the game. Add fields there for new bosses and read them in campaignApply().
+// Boss skins: one list of layers per stage (see skin-data.js: t shape, x/y centre in player radii, w/h half size, r rotation, c colour, o 0 = inside the circle / 1 = outside, like a hat).
+// The team colour rim is always drawn on top, so the boss stays Red. Draw new ones in the skin editor and paste the layers here.
+const L = (t, x, y, w, h, r, c, o) => ({ t, x, y, w, h, r, c, o });
+const CAMPAIGN_SKINS = [
+    [L('oval', 0, 0, 1, 1, 0, '#ffd54f', 0), L('oval', -0.35, -0.2, 0.14, 0.2, 0, '#222222', 0), L('oval', 0.35, -0.2, 0.14, 0.2, 0, '#222222', 0), L('half', 0, 0.4, 0.45, 0.3, 0, '#c62828', 0), L('tri', 0, -1.2, 0.55, 0.5, 0, '#8d6e63', 1)],
+    [L('oval', 0, 0, 1, 1, 0, '#7e57c2', 0), L('star', -0.4, -0.3, 0.25, 0.25, 0, '#ffffff', 0), L('star', 0.4, 0.1, 0.25, 0.25, 0, '#ffffff', 0), L('star', -0.1, 0.5, 0.2, 0.2, 0, '#ffffff', 0), L('ring', 0, 0, 1.3, 1.3, 0, '#b39ddb', 1)],
+    [L('oval', 0, 0, 1, 1, 0, '#26c6da', 0), L('rect', -0.35, 0, 0.12, 1.2, 25, '#006064', 0), L('rect', 0.35, 0, 0.12, 1.2, 25, '#006064', 0), L('rect', 0, -0.55, 1.15, 0.13, 0, '#ffffff', 1), L('tri', -0.6, -1.0, 0.3, 0.4, -20, '#00838f', 1), L('tri', 0.6, -1.0, 0.3, 0.4, 20, '#00838f', 1)],
+    [L('oval', 0, 0, 1, 1, 0, '#37474f', 0), L('cross', -0.35, -0.15, 0.2, 0.2, 45, '#ff7043', 0), L('cross', 0.35, -0.15, 0.2, 0.2, 45, '#ff7043', 0), L('moon', -1.3, 0, 0.5, 0.7, 0, '#ff7043', 1), L('moon', 1.3, 0, 0.5, 0.7, 180, '#ff7043', 1), L('tri', -0.5, -1.15, 0.25, 0.45, 0, '#263238', 1), L('tri', 0.5, -1.15, 0.25, 0.45, 0, '#263238', 1)],
+    [L('oval', 0, 0, 1, 1, 0, '#eceff1', 0), L('ring', 0, 0, 0.8, 0.8, 0, '#90a4ae', 0), L('cross', -0.3, -0.2, 0.15, 0.15, 45, '#455a64', 0), L('cross', 0.3, -0.2, 0.15, 0.15, 45, '#455a64', 0), L('heart', 0, 0.45, 0.2, 0.2, 0, '#f48fb1', 0)],
+    [L('oval', 0, 0, 1, 1, 0, '#212121', 0), L('ring', 0, 0, 0.75, 0.75, 0, '#d50000', 0), L('star', 0, 0, 0.35, 0.35, 0, '#d50000', 0), L('tri', -0.5, -1.2, 0.25, 0.4, 0, '#ffca28', 1), L('tri', 0, -1.3, 0.25, 0.5, 0, '#ffca28', 1), L('tri', 0.5, -1.2, 0.25, 0.4, 0, '#ffca28', 1), L('rect', -0.7, -2.3, 0.03, 1.2, 0, '#e0e0e0', 1), L('rect', 0.7, -2.3, 0.03, 1.2, 0, '#e0e0e0', 1)],
+];
 const CAMPAIGN_STAGES = [
     // name / boss: shown to the player (placeholders for most).
     // goal: points to clear the stage = points the boss needs to beat you. gap: the net's gap at the top (NET_GAP): 4*PL = the classic net, a smaller gap = a taller net, H = no net.
     // special: the boss' ability (any id the AI knows, AI_SPECIAL_POOL). special2: a second one on the boss' second key (the AI uses dash from either key). dashes: 2 = a second, separate dash.
-    // gimmick: 'dashCut' = every point (either way) shaves 0.5 s off one of her two dash cooldowns, picked at random.   plunge: how much the AI likes shots that come down steeply (0 = no preference).
+    // gimmick: 'dashCut' = every point (either way) shaves 1 s (CAMPAIGN_DASH_CUT) off one of her two dash cooldowns, picked at random.   plunge: how much the AI likes shots that come down steeply (0 = no preference).
     // lvl: how sharp the boss is (0..1; a lower level reacts later, see aiLag in ai.js).
-    { name: 'Stage 1', boss: 'Boss 1', goal: 5, gap: 2 * PL, special: 'dash', dashes: 2, gimmick: 'dashCut', plunge: 120, lvl: 0.4 },
-    { name: 'Stage 2', boss: 'Boss 2', goal: 5, gap: 2 * PL, special: 'arrow', special2: 'dash', lvl: 0.55 },
-    { name: 'Stage 3', boss: 'Boss 3', goal: 5, gap: 4 * PL, special: 'bat', lvl: 0.65 },
-    { name: 'Stage 4', boss: 'Boss 4', goal: 7, gap: 4 * PL, special: 'explode', lvl: 0.8 },
-    { name: 'Stage 5', boss: 'Boss 5', goal: 7, gap: 4 * PL, special: 'bat', special2: 'decoy',lvl: 0.9 },
-    { name: 'Stage 6', boss: 'Boss 6', goal: 9, gap: 4 * PL, special: 'awakened', special2: 'marionette', lvl: 1 },
+    { name: 'Stage 1', boss: 'Boss 1', goal: 5, gap: 2 * PL, special: 'dash', lvl: 0.4, skin: CAMPAIGN_SKINS[0] },
+    { name: 'Stage 2', boss: 'Boss 2', goal: 5, gap: 2 * PL, special: 'plinko', lvl: 0.6, skin: CAMPAIGN_SKINS[1] },
+    { name: 'Stage 3', boss: 'Boss 3', goal: 7, gap: 2 * PL, special: 'dash', dashes: 2, gimmick: 'dashCut', plunge: 120, lvl: 0.7, skin: CAMPAIGN_SKINS[2] },
+    { name: 'Stage 4', boss: 'Boss 4', goal: 7, gap: 4 * PL, special: 'explode', special2: 'bat', lvl: 0.8, skin: CAMPAIGN_SKINS[3] },
+    { name: 'Stage 5', boss: 'Boss 5', goal: 7, gap: 4 * PL, special: 'decoy', special2: 'arrow', arrows: 3, combo: 'decoyArrow', lvl: 0.9, skin: CAMPAIGN_SKINS[4] },
+    { name: 'Stage 6', boss: 'Boss 6', goal: 9, gap: 4 * PL, special: 'marionette', special2: 'explode', lvl: 1, skin: CAMPAIGN_SKINS[5], swarm: { first: 6, every: 9, max: 4, life: 30 } },
 ];
-const campaign = { on: false, stage: 0, continues: 0, won: null, clear: false, saved: null }; // won = who took the stage that just ended (0 = you, 1 = the boss); clear = the last stage was just beaten
+const CAMPAIGN_DASH_CUT = 1;           // seconds every point (either way) takes off one of a 'dashCut' boss' two dash cooldowns
+const CAMPAIGN_INV_T = 1;              // seconds of invincibility for a player who respawns after a point (so a carried-over decoy cannot spawn-camp)
+const CAMPAIGN_BANNER_T = 2.2;         // seconds of the stage banner (the world holds still)
+const CAMPAIGN_LOCK_T = 0.7;           // seconds the chosen card shows before the draft closes
+const CAMPAIGN_DRAFT_AT = [0, 1];      // the stages (0-based) that open with a draft: the first and the second special
+const campaign = { on: false, stage: 0, continues: 0, won: null, clear: false, saved: null, bannerT: 0, draft: { on: false, slot: 0, offer: [], cur: 1, t: 0, lock: 0, chosen: -1, prev: 0 } }; // won = who took the stage that just ended (0 = you, 1 = the boss); clear = the last stage was just beaten
 const campaignStage = () => CAMPAIGN_STAGES[Math.min(campaign.stage, CAMPAIGN_STAGES.length - 1)];
 const campaignGoal = () => campaignStage().goal;
 const campaignLose = () => campaignStage().lose || campaignStage().goal;
@@ -28,6 +46,11 @@ function campaignBossReset() { // the boss' extra mechanics back to the normal g
     b.dashCut = [0, 0];
     ai[1].lvl = 1;
     ai[1].plunge = 0;
+    campaignSwarmClear();
+    campaignMapSet(null);
+    b.arrowN = 1;
+    b.invT = 0;
+    ai[1].combo = null;
 }
 // The boss' settings and the net for the current stage. Called whenever a stage starts (and again when the run starts over).
 function campaignApply() {
@@ -37,20 +60,25 @@ function campaignApply() {
     ai[1].lvl = s.lvl;
     ai[1].plunge = s.plunge || 0;
     b.special = s.special;
-    b.special2 = s.special2 || 'plinko';
+    b.special2 = s.special2 || null;     // (the campaign is a two-special game: a boss without a second ability just has none)
     b.dual = !!s.special2;
     b.dashN = s.dashes || 1;
     b.dashCut = [0, 0];
     setNetGap(s.gap);
+    campaignSwarmClear();
+    campaign.swarmT = s.swarm ? s.swarm.first : 0;
+    campaignMapSet(s);
+    b.arrowN = s.arrows || 1;            // arrows per shot (a spread)
+    ai[1].combo = s.combo || null;       // a combined AI plan for her two specials (see aiSpDecoyArrow)
 }
 function campaignStart() {
     if (campaign.on)
         return;
-    campaign.saved = { swapOn, pickFixed, twoSpecials, teamSize, ai0: ai[0].on, ai1: ai[1].on };
+    campaign.saved = { swapOn, pickFixed, twoSpecials, teamSize, ai0: ai[0].on, ai1: ai[1].on, sp: allPlayers.map(p => [p.special, p.special2]) };
     swapOn = false;                            // one fixed side per stage
     pickFixed = false;                         // the boss' ability is set by the stage, not by a pick screen
-    twoSpecials = false;
-    allPlayers.forEach(p => { if (p.special === 'fighter' || p.special2 === 'fighter') { p.special = 'dash'; p.special2 = 'plinko'; } });
+    twoSpecials = true;                        // always two slots (you have the second one from stage 2 on)
+    campaignLoadoutReset();
     if (teamSize !== 1) {
         layoutTeams(1);
         teamSize = 1;
@@ -58,6 +86,7 @@ function campaignStart() {
     Object.assign(campaign, { on: true, stage: 0, continues: 0, won: null, clear: false });
     campaignApply();
     resetMatch();
+    campaignBegin();
 }
 // Leave the campaign and put the borrowed settings back. restore = false when something else (2v2, Flex, ...) just changed them on purpose.
 function campaignStop(restore = true) {
@@ -68,10 +97,19 @@ function campaignStop(restore = true) {
     campaign.saved = null;
     campaignBossReset();
     setNetGap(NET_GAP_CLASSIC);
-    if (restore && s) {
+    campaign.bannerT = 0;
+    campaign.draft.on = false;
+    allPlayers.forEach((p, i) => { // the menu's two-special mode needs a second special: back to what they had, or a sensible one
+        const was = s && s.sp && s.sp[i];
+        p.special = was && was[0] ? was[0] : p.special;
+        p.special2 = was && was[1] ? was[1] : p.special2 && p.special2 !== p.special ? p.special2 : (p.special === 'plinko' ? 'dash' : 'plinko');
+    });
+    if (s) { // (the setters that end a campaign set their own option right after this, so putting these back first is always safe)
         swapOn = s.swapOn;
         pickFixed = s.pickFixed;
         twoSpecials = s.twoSpecials;
+    }
+    if (restore && s) {
         ai[0].on = s.ai0;
         ai[1].on = s.ai1;
         if (s.teamSize !== teamSize) {
@@ -100,40 +138,155 @@ function campaignAfterOver() {
     } else {
         campaign.stage = 0;                    // one long run: a lost stage means starting over
         campaign.continues++;
+        campaignLoadoutReset();                // ... and the loadout is drafted again
     }
     campaignApply();
+    campaignBegin();
 }
 // ---- every point (either way), called from rules.js point() before the next round starts ----
 function campaignOnPoint(t) {
     const s = campaignStage(), b = allPlayers[1];
-    if (s.gimmick === 'dashCut') { // one of her two dashes, at random, comes back 0.5 s sooner for good (and the one that is cooling down right now is helped too)
+    if (s.gimmick === 'dashCut') { // one of her two dashes, at random, comes back 1 s sooner for good (and the one that is cooling down right now is helped too)
         const i = Math.random() < 0.5 ? 0 : 1, id = i ? 'dash2' : 'dash';
-        b.dashCut[i] = Math.min(b.dashCut[i] + 1, DASH_COOLDOWN - 1);
-        b.cd[id] = Math.max(0, b.cd[id] - 1);
+        b.dashCut[i] = Math.min(b.dashCut[i] + CAMPAIGN_DASH_CUT, DASH_COOLDOWN - 0.5); // (never below 0.5 s)
+        b.cd[id] = Math.max(0, b.cd[id] - CAMPAIGN_DASH_CUT);
     }
 }
-// Where the ball appears: the top of the net, falling down the net line (a little sideways drift so it is not always the same).
+// Where the ball appears: the top of the net, falling straight down the net line.
 function campaignSpawnBall() {
     ball.x = NETX;
     ball.y = Math.max(ball.r + 6, Math.min(NET_GAP, 3 * PL) - ball.r);
-    ball.vx = (Math.random() - 0.5) * 80;
+    ball.vx = 0; // straight down the net line: nothing is carried over from the last ball
     ball.vy = 0;
+    ball.w = 0;
+}
+// ---- SKIN, MAP, SWARM (per-stage looks and gimmicks) ----
+const campaignSkin = () => { const s = campaignStage(); return s._skin || (s._skin = typeof skinClean === 'function' ? skinClean(s.skin) : (s.skin || [])); }; // (cleaned once: the sprite cache keys on the array)
+// Map changes: a stage names one with `map: 'id'`; CAMPAIGN_MAPS.id = { on() { ... }, off() { ... } } is run when the stage starts / is left. (Empty for now.)
+const CAMPAIGN_MAPS = {};
+function campaignMapSet(s) {
+    if (campaign.mapId && CAMPAIGN_MAPS[campaign.mapId])
+        CAMPAIGN_MAPS[campaign.mapId].off();
+    campaign.mapId = null;
+    if (s && s.map && CAMPAIGN_MAPS[s.map]) {
+        CAMPAIGN_MAPS[s.map].on();
+        campaign.mapId = s.map;
+    }
+}
+function campaignSwarmClear() {
+    for (const d of decoys.filter(d => d.swarm))
+        removeDecoy(d);
+}
+// A boss with a `swarm` spawns another death ball on her half every `every` seconds (up to `max`, each gone after `life` seconds). Her marionette shoves all of them (player-casts.js).
+function campaignSwarmTick() {
+    const sw = campaignStage().swarm, b = allPlayers[1];
+    if (!sw)
+        return;
+    const mine = decoys.filter(d => d.swarm);
+    for (const d of mine) {
+        d.age = (d.age || 0) + DT;
+        if (d.age > sw.life)
+            removeDecoy(d);
+    }
+    campaign.swarmT -= DT;
+    if (campaign.swarmT <= 0) {
+        campaign.swarmT = sw.every;
+        if (b.alive && decoys.filter(d => d.swarm).length < sw.max)
+            spawnSwarmBall(b, NETX - aiSide(b) * (120 + Math.random() * 260));
+    }
+}
+function campaignInvTick() {
+    for (const p of players)
+        if (p.invT > 0)
+            p.invT = Math.max(0, p.invT - DT);
 }
 // A point that does not end the stage: no pause, no new round. The ball respawns, whoever was killed comes back at their spawn, everything else carries on.
 function campaignRespawn() {
     for (const p of players) {
-        if (p.onBall || p.tball) { // let go of the old ball (it is about to be moved)
+        if (p.tball === ball) { // let go of the old ball (it is about to be moved; someone holding a decoy keeps holding it)
             p.onBall = false;
             p.tball = null;
             p.rope = null;
             p.pending = null;
         }
-        if (!p.alive)
+        if (!p.alive) {
             p.reset();
+            p.invT = CAMPAIGN_INV_T;
+        }
     }
-    decoys.length = 0;
+    // (decoys, arrows, pegs, mines and the rest all carry over: the stage plays as one continuous round)
     ball.reset();
     campaignSpawnBall();
     ai.forEach((a, i) => aiReset(i));          // forget plans made for the old ball
     events.onNewRound();
+}
+
+// ---- THE LOADOUT DRAFT ----
+// Your specials start empty each run: special = your first (key 1), special2 = your second (null until stage 2's draft).
+function campaignLoadoutReset() {
+    const p = allPlayers[0];
+    p.special = p.special && p.special !== 'fighter' ? p.special : 'dash'; // (a placeholder until the first draft; the first slot always has something)
+    p.special2 = null;
+    allPlayers.forEach(q => { if (q.special === 'fighter' || q.special2 === 'fighter') { q.special = 'dash'; q.special2 = null; } });
+}
+// What each draft offers (index = the slot: 0 = the first special, 1 = the second). Three ids each; change them here.
+const CAMPAIGN_OFFERS = [['dash', 'plinko', 'arrow'], ['bat', 'warp', 'decoy']];
+function campaignOffer(slot) {
+    const have = [allPlayers[0].special, allPlayers[0].special2].filter(Boolean);
+    return CAMPAIGN_OFFERS[slot].filter(id => slot === 0 || !have.includes(id)); // (never one you already have; the lists above do not overlap)
+}
+// A stage is about to start: the draft first when this stage has one, then the stage banner.
+function campaignBegin() {
+    const d = campaign.draft, slot = CAMPAIGN_DRAFT_AT.indexOf(campaign.stage);
+    campaign.bannerT = 0;
+    if (slot < 0) {
+        campaign.bannerT = CAMPAIGN_BANNER_T;
+        return;
+    }
+    Object.assign(d, { on: true, slot, offer: campaignOffer(slot), cur: 1, t: 0, lock: 0, chosen: -1, prev: keyBits(allPlayers[0].keys) }); // (a key already held is not a press)
+    if (slot === 1)
+        allPlayers[0].special2 = null;
+}
+function campaignDraftPick(i) { // take card i
+    const d = campaign.draft, p = allPlayers[0];
+    d.chosen = i;
+    d.lock = CAMPAIGN_LOCK_T;
+    if (d.slot === 0)
+        p.special = d.offer[i];
+    else
+        p.special2 = d.offer[i];
+}
+// One tick while a draft or a banner is up: the world holds still. Returns true while it does (rules.js update()).
+function campaignHold() {
+    const d = campaign.draft;
+    if (d.on) {
+        const p = allPlayers[0], bits = keyBits(p.keys), fresh = bits & ~d.prev;
+        d.prev = bits;
+        d.t += DT;
+        if (d.lock > 0) {
+            d.lock -= DT;
+            if (d.lock <= 0) {
+                d.on = false;
+                for (const q of players) { // keys still held from the screen must not start a cast on the first tick
+                    q.prevSp = q.keys.sp;
+                    q.prevSp2 = q.keys.sp2;
+                    q.prevX = q.keys.x;
+                }
+                campaign.bannerT = CAMPAIGN_BANNER_T;
+            }
+        } else if (d.t > 0.35) { // (the cards are still dealing in)
+            if (fresh & 1)
+                d.cur = (d.cur + 2) % 3;
+            if (fresh & 2)
+                d.cur = (d.cur + 1) % 3;
+            if (fresh & (16 | 64 | 128)) // grapple or either special key
+                campaignDraftPick(d.cur);
+        }
+        return true;
+    }
+    if (campaign.bannerT > 0) {
+        campaign.bannerT = Math.max(0, campaign.bannerT - DT);
+        return true;
+    }
+    return false;
 }

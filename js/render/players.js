@@ -1,7 +1,7 @@
 // RENDER - the player discs: the team-colour body, the skin inside it (render/skin.js), the white outline, then hats and other outside layers. Read-only on game state.
 function drawPlayers() { // the player discs
     for (const p of players) {
-        cx.globalAlpha = p.alive ? swapArrive(p) : 0.2;
+        cx.globalAlpha = p.alive ? swapArrive(p) * (p.invT > 0 && Math.floor(performance.now() / 90) % 2 ? 0.4 : 1) : 0.2; // (blinking = spawn protection)
         cx.fillStyle = p.color;
         cx.strokeStyle = '#fff';
         cx.lineWidth = p.keys.x ? 6 : 2;

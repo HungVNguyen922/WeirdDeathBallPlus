@@ -123,7 +123,10 @@ function skinSetLocalSlot(slot) {
     skinLocalState().slot = slot;
     skinPersistLocal();
 }
-function skinOf(p) { // online: my own seat shows my skin at once, everyone else's comes with the roster (only signed-in players have one). Offline: the first player is me.
+function skinOf(p) {
+    if (typeof campaignOn === 'function' && campaignOn() && p.id === 1)
+        return campaignSkin(); // the campaign boss wears her stage's skin
+    // online: my own seat shows my skin at once, everyone else's comes with the roster (only signed-in players have one). Offline: the first player is me.
     if (typeof net !== 'undefined' && net.on) {
         if (p.id === net.slot)
             return skinMy();

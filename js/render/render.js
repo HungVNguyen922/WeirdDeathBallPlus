@@ -56,6 +56,7 @@ function drawScene() {
     cx.restore();
     drawPickScreen(); // ...except the screens drawn over it, which have things to click on: the special-ability select grid, when one is open,
     drawSideChangeBanner(performance.now()); // the "SIDE CHANGE" banner, over everything except the menu
+    drawCampaignFx(); // the campaign's loadout draft and stage banner
     drawSpecialMenu(); // and the special menu
     cx.restore();
 }

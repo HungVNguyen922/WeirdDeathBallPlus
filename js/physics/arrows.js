@@ -48,7 +48,7 @@ function arrowHitsTerrain(a) {
 // An arrow reached a living enemy or a ball. Returns true if it was used up. Teammates and the shooter are passed through.
 function arrowStrike(a) {
     for (const p of players)
-        if (p.alive && p.team !== a.team && Math.hypot(p.x - a.x, p.y - a.y) < p.r + ARROW_R) {
+        if (p.alive && !(p.invT > 0) && p.team !== a.team && Math.hypot(p.x - a.x, p.y - a.y) < p.r + ARROW_R) {
             if (ARROW_KILLS) {
                 p.alive = false;
                 p.rope = null;
@@ -189,7 +189,11 @@ PROJ_TYPES.arrow = {
     },
     after(a) { if (!a.stuck && !a.spent) a.ang = Math.atan2(a.vy, a.vx); }, // nose-dives with gravity
 };
+const ARROW_SPREAD = 0.13; // rad between the arrows of a spread shot (a campaign boss with p.arrowN = 3)
 function fireArrow(p, c) {
-    const ux = Math.cos(c.ang), uy = Math.sin(c.ang), v = ARROW_V_MIN + (ARROW_V_MAX - ARROW_V_MIN) * c.charge, d = p.r + ARROW_R + 2;
-    spawnProjectile('arrow', p, p.x + ux * d, p.y + uy * d, ux * v, uy * v, { ang: c.ang, stuck: false, immune: 0, ghost: 0 });
+    const v = ARROW_V_MIN + (ARROW_V_MAX - ARROW_V_MIN) * c.charge, d = p.r + ARROW_R + 2, n = p.arrowN || 1;
+    for (let i = 0; i < n; i++) {
+        const ang = c.ang + (i - (n - 1) / 2) * ARROW_SPREAD, ux = Math.cos(ang), uy = Math.sin(ang);
+        spawnProjectile('arrow', p, p.x + ux * d, p.y + uy * d, ux * v, uy * v, { ang, stuck: false, immune: 0, ghost: 0 });
+    }
 }

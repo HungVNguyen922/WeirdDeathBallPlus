@@ -260,7 +260,7 @@ function barbedRopeKills() {
         if (!e)
             continue;
         for (const q of players)
-            if (q !== p && q.alive && (BARBWIRE_HITS_TEAMMATES || q.team !== p.team) && distToSeg(q.x, q.y, p.x, p.y, e.x, e.y) < q.r + BARBWIRE_HALF_W) {
+            if (q !== p && q.alive && !(q.invT > 0) && (BARBWIRE_HITS_TEAMMATES || q.team !== p.team) && distToSeg(q.x, q.y, p.x, p.y, e.x, e.y) < q.r + BARBWIRE_HALF_W) {
                 q.alive = false; // caught on the wire
                 q.rope = null;
                 q.pending = null;
@@ -293,6 +293,8 @@ function update() {
         swapBanner = Math.max(0, swapBanner - DT);
         return;
     }
+    if (campaignOn() && campaignHold()) // the campaign's loadout draft or stage banner: the world holds still
+        return;
     if (pick.on) { // a pick screen is open: the world holds still until everybody has chosen
         pickStep();
         return;
@@ -362,8 +364,14 @@ function update() {
     for (const d of [...decoys]) { // decoys: the same physics as the death ball, but they can never score (see the veils in ball.js)
         d.step();
         events.onBodyStep(d);
+        if (d.pull)
+            d.pull.t = Math.max(0, d.pull.t - DT);
         if (d.dead)
             removeDecoy(d);
+    }
+    if (campaignOn()) {
+        campaignSwarmTick();
+        campaignInvTick();
     }
     for (let i = 0; i < decoys.length; i++) { // decoys are solid: they bump into players, the death ball and each other (the death ball itself still just kills)
         const d = decoys[i];
@@ -375,8 +383,8 @@ function update() {
                         const dx = d.x - p.x, dy = d.y - p.y, m = Math.hypot(dx, dy) || 1;
                         events.onImpact(p, p.x + dx / m * p.r, p.y + dy / m * p.r, dx / m, dy / m, hit);
                     }
-                    if (p.awakeT > 0)
-                        continue; // Awakened: unkillable, the crash bounces you off instead
+                    if (p.awakeT > 0 || p.invT > 0)
+                        continue; // Awakened (or just respawned in the campaign): unkillable, the crash bounces you off instead
                     p.alive = false;
                     p.rope = null;
                     p.pending = null;
@@ -408,8 +416,8 @@ function update() {
                 const dx = ball.x - p.x, dy = ball.y - p.y, m = Math.hypot(dx, dy) || 1;
                 events.onImpact(p, p.x + dx / m * p.r, p.y + dy / m * p.r, dx / m, dy / m, hit);
             }
-            if (p.awakeT > 0)
-                continue; // Awakened: unkillable, the crash bounces you off instead
+            if (p.awakeT > 0 || p.invT > 0)
+                continue; // Awakened (or just respawned in the campaign): unkillable, the crash bounces you off instead
             p.alive = false;
             p.rope = null;
             p.onBall = false;

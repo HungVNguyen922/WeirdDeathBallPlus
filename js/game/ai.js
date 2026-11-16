@@ -1027,12 +1027,46 @@ function aiPegHelps(me, x, y) { // does a peg at (x, y) stop a shot that would s
 
 // ---- MARIONETTE: shove the ball the way a rollout says is best (kill a holder, reverse a jumper's ball into their goal, deny a shot) ----
 const AI_MARIO_DIRS = [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]];
+// The campaign swarm: with two or more of my extra death balls out, shove them all along the arrow that sends the most of them through the other player (and doesn't wreck the real ball).
+function aiSwarmShove(me, A, k, foes) {
+    const sw = decoys.filter(d => d.swarm && d.owner === me);
+    if (sw.length < 2 || !foes.length)
+        return false;
+    const v0 = aiPushValue(me, ball, 0, 0, 0, false);
+    let best = null;
+    for (const [dx, dy] of AI_MARIO_DIRS) {
+        if (me.ground && dy < 0)
+            continue;
+        const m = Math.hypot(dx, dy), ux = dx / m, uy = dy / m;
+        let hits = 0;
+        for (const d of sw) {
+            const vx = (ux && d.vx * ux < 0 ? 0 : d.vx) + ux * MARIONETTE_V, vy = (uy && d.vy * uy < 0 ? 0 : d.vy) + uy * MARIONETTE_V;
+            let hit = false;
+            for (let t = 0.1; t <= 1.6 && !hit; t += 0.1) {
+                const x = d.x + vx * t, y = d.y + vy * t + 0.5 * BALL_G * t * t;
+                hit = foes.some(f => Math.hypot(f.x - x, f.y - y) < f.r + d.r + 60);
+            }
+            if (hit)
+                hits++;
+        }
+        if (hits && aiPushValue(me, ball, 2, ux * MARIONETTE_V, uy * MARIONETTE_V, true) >= v0 - 300 && (!best || hits > best.hits))
+            best = { hits, dx, dy };
+    }
+    if (!best || best.hits < Math.max(2, Math.ceil(sw.length / 2)))
+        return false;
+    k.sp = true;
+    k.l = best.dx < 0; k.r = best.dx > 0; k.up = best.dy < 0; k.dn = best.dy > 0;
+    A.sp = { id: 'mario', dx: best.dx, dy: best.dy };
+    return true;
+}
 function aiSpMarionette(me, A, k) {
     if (me.cd.marionette > 0 || me.onBall || me.rope || me.pending)
         return;
     if (players.some(q => q !== me && q.team === me.team && q.alive && q.onBall && q.tball === ball))
         return; // a teammate has it
     const foes = players.filter(q => q.team !== me.team && q.alive);
+    if (aiSwarmShove(me, A, k, foes))
+        return;
     const holder = foes.some(q => q.onBall && q.tball === ball), near = foes.some(q => Math.hypot(q.x - ball.x, q.y - ball.y) < 380), threat = aiForecast(ball).end === -aiGoalSign(me);
     const shot = (A.shotT || 0) > 0; // we have just let go of the ball: a shove may carry it into their goal
     if (!holder && !near && !threat && !shot)
@@ -1147,15 +1181,112 @@ function aiSpDecoy(me, A, k) {
     A.spCool = 1;
 }
 
+// ---- DECOY + ARROW (the stage 5 boss): drop a decoy, then bat it into the other player with an arrow. An arrow that reaches a decoy adds ARROW_BALL_K of its velocity to it, and the decoy then
+// bounces off the walls / ceiling like the ball, so the plan tries 24 angles x 2 charges, flies each arrow to the decoy, and rolls the decoy forward (a ricochet shot is just one that rolls into you).
+// Value: it reaches an enemy = 300 - ticks * 0.4; else if it ends on THEIR side of the net, up to 140 for how close it ends (a decoy parked on them, ready for the next arrow). ----
+const aiKeyOf = (me, id) => (me.slots().find(s => s[1] === id) || ['sp'])[0];
+const AI_DCA_ANGS = Array.from({ length: 24 }, (_, i) => -Math.PI + i * Math.PI / 12);
+function aiDcaRoll(me, d0, delay, vx, vy) {
+    const fx = snapshotFx(), b = Object.assign(new Ball(), d0), foes = players.filter(q => q.team !== me.team && q.alive).map(aiEnemySnap);
+    let minD = 1e9, v = null;
+    for (let n = 0; n < 150 + delay && v === null; n++) {
+        if (n === delay) {
+            b.vx += vx;
+            b.vy += vy;
+            const s = Math.hypot(b.vx, b.vy);
+            if (s > BALL_VMAX) b.boost = Math.max(b.boost, Math.min(1, (s - BALL_VMAX) / (PAD_MAX - BALL_VMAX)));
+        }
+        b.step();
+        for (const e of foes) {
+            aiEnemyStep(e);
+            const d = Math.hypot(b.x - e.x, b.y - e.y);
+            if (n >= delay) minD = Math.min(minD, d);
+            if (n >= delay && d < e.r + b.r && v === null) v = 300 - n * 0.4;
+        }
+    }
+    restoreFx(fx);
+    if (v !== null) return v;
+    return (b.x - NETX) * aiSide(me) > 0 ? Math.max(0, 140 - minD * 0.15) : 0;
+}
+function aiDcaPlan(me, d) { // { v, ang, ch }: the best arrow (angle, charge) to hit decoy d with, or null
+    let best = null;
+    for (const ch of [0.5, 1]) {
+        const V = ARROW_V_MIN + (ARROW_V_MAX - ARROW_V_MIN) * ch;
+        for (const ang of AI_DCA_ANGS) {
+            const ux = Math.cos(ang), uy = Math.sin(ang), d0 = me.r + ARROW_R + 2;
+            let ax = me.x + ux * d0, ay = me.y + uy * d0, avx = ux * V, avy = uy * V, hit = -1;
+            for (let n = 0; n < 150; n++) {
+                avy += ARROW_G * DT;
+                ax += avx * DT;
+                ay += avy * DT;
+                const t = (n + 1) * DT, bx = d.x + d.vx * t, by = d.y + d.vy * t + 0.5 * BALL_G * t * t;
+                if (Math.hypot(ax - bx, ay - by) < d.r + ARROW_R) { hit = n; break; }
+                if (arrowHitsTerrain({ x: ax, y: ay })) break; // it would stick in a wall first
+            }
+            if (hit < 0) continue;
+            const v = aiDcaRoll(me, d, hit, avx * ARROW_BALL_K, avy * ARROW_BALL_K);
+            if (!best || v > best.v) best = { v, ang, ch };
+        }
+    }
+    return best;
+}
+function aiSpDecoyArrow(me, A, k) {
+    if (me.onBall || me.rope || me.pending || me.casts.length)
+        return;
+    if (Math.hypot(ball.x - me.x, ball.y - me.y) < 160 || aiPathMin(me, ball, 0, false, me.r, W - me.r) < AI_THREAT * 2)
+        return; // defend first (aiming roots us to the spot)
+    const mine = decoys.find(d => d.owner === me && !d.swarm);
+    A.dcaAge = mine ? (A.dcaAge || 0) + 2 * DT : 0;
+    A.dcaT = (A.dcaT || 0) - 1;
+    if (mine && me.cd.arrow <= 0 && A.dcaT <= 0) {
+        A.dcaT = 12; // (a plan is a few dozen rollouts: five times a second is plenty)
+        const plan = aiDcaPlan(me, mine);
+        if (plan && (plan.v >= 150 || (plan.v >= 70 && (mine.x - NETX) * aiSide(me) <= 0))) {
+            const key = aiKeyOf(me, 'arrow');
+            k[key] = true;
+            A.sp = { id: 'dca', t: 0, rp: 0.3, ang: plan.ang, ch: plan.ch, key };
+            return;
+        }
+    }
+    if (me.cd.decoy <= 0 && me.ground && me.cd.arrow < 1.5 && (!mine || A.dcaAge > 7)) { // a fresh one when we have none (or the old one has gone nowhere for a while)
+        k[aiKeyOf(me, 'decoy')] = true;
+        A.spCool = 1;
+        A.dcaAge = 0;
+    }
+}
+function aiDcaRun(me, A, k, S) {
+    S.t += DT;
+    const c = me.casting('arrow'), mine = decoys.find(d => d.owner === me && !d.swarm);
+    if (!c || !mine || S.t > 2.6) { A.sp = null; A.spCool = 0.5; return; }
+    if ((S.rp -= DT) <= 0) { // the decoy moves: look again
+        S.rp = 0.3;
+        const p = aiDcaPlan(me, mine);
+        if (p && p.v >= 70) { S.ang = p.ang; S.ch = p.ch; }
+    }
+    const diff = wrapAng(S.ang - c.ang), danger = !!aiDodge(me, ball, me.r, W - me.r);
+    k.l = diff < -0.06; k.r = diff > 0.06; k.up = false; k.dn = false;
+    k[S.key] = true;
+    if (danger || (c.charge >= S.ch && Math.abs(diff) < 0.08)) {
+        k[S.key] = false;
+        A.sp = null;
+        A.spCool = 0.4;
+    }
+}
+
 // ---- DASH (the loop dash is in aiHeldKeys): get back to a slow, far-away ball quickly ----
 function aiSpDash(me, A, k) {
     if (me.dashSlot() < 0 || me.onBall || me.casts.length || !me.ground || !aiCanGrip(me))
         return;
-    const b = AIB, dx = b.x - me.x;
-    if ((b.x - NETX) * aiSide(me) >= 40 || Math.abs(dx) < 650 || Math.hypot(b.vx, b.vy) > 200)
+    const b = AIB, dx = b.x - me.x, two = me.dashN > 1; // a boss with two dashes spends them freely: they are there for uptime (back into play quickly, high tempo), not for the shots
+    if (two && aiFlight(b, 1 - me.team) && Math.abs(dx) > 220) { // recover: their shot is on its way to our goal and we are not there yet
+        k[aiDashKey(me)] = true; k.r = dx > 0; k.l = dx < 0; k.up = false; k.dn = false;
+        A.spCool = 0.35;
+        return;
+    }
+    if ((b.x - NETX) * aiSide(me) >= 40 || Math.abs(dx) < (two ? 300 : 650) || Math.hypot(b.vx, b.vy) > (two ? 380 : 200))
         return;
     k[aiDashKey(me)] = true; k.r = dx > 0; k.l = dx < 0; k.up = false; k.dn = false;
-    A.spCool = 1;
+    A.spCool = two ? 0.4 : 1;
 }
 
 // ================= THE NEXT FIVE SPECIALS: BAT, BARBWIRE, WARP, AWAKENED, EXPLODE =================
@@ -1702,7 +1833,9 @@ function aiSpecialRun(me, A, k) {
         k.l = S.dx < 0; k.r = S.dx > 0; k.up = S.dy < 0; k.dn = S.dy > 0; k.sp = false;
         A.sp = null;
         A.spCool = 0.4;
-    } else if (S.id === 'arrow')
+    } else if (S.id === 'dca')
+        aiDcaRun(me, A, k, S);
+    else if (S.id === 'arrow')
         aiArrowRun(me, A, k, S);
     else if (S.id === 'bat')
         aiBatRun(me, A, k, S);
@@ -1721,7 +1854,7 @@ function aiSpecial(me, A, k) {
     else if (A.aw)
         A.aw = null;
     if (A.sp) { aiSpecialRun(me, A, k); return; }
-    const id = me.slots()[0][1];
+    const id = A.combo === 'decoyArrow' && me.has('decoy') && me.has('arrow') ? 'decoyArrow' : me.slots()[0][1]; // (a campaign boss with both plays them as one plan)
     const busy = (A.E || A.X || A.V) && id !== 'explode' && id !== 'bat'; // a committed jump is in flight; a look-ahead is not. (A blast or a swing may go off mid-jump: that is what the jump is for)
     if (A.spCool > 0 || busy || (A.spT = (A.spT || 0) - 1) > 0)
         return;
@@ -1738,7 +1871,8 @@ function aiSpecial(me, A, k) {
         barbwire: aiSpBarbwire,
         warp: aiSpWarp,
         awakened: aiSpAwakened,
-        explode: aiSpExplode
+        explode: aiSpExplode,
+        decoyArrow: aiSpDecoyArrow
     }[id];
 
     if (f) {

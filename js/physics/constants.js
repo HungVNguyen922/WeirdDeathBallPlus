@@ -200,7 +200,7 @@ const BALL_I = 0.25 * BALL_M * BALL_R * BALL_R; // spin inertia (was 6x that: lo
 const BALL_W_MAX = 200;                // top spin speed (rad/s; it was a hard-coded 45)
 const BALL_SPIN_DRAG = 0;              // spin lost per second in the air (share). Was a hard-coded 0.3. 0 = spin never fades in flight
 const BALL_ROLL_DRAG = 0.15;           // how fast the ball slows rolling on the floor (per second, share of speed lost). The original was 0.4; lower = rolls further
-const BALL_MAGNUS = 0.00;             // curve from spin (1/rad). Acceleration = BALL_MAGNUS * spin * speed, always sideways to the flight, so it bends the path without adding speed. 0 = off
+const BALL_MAGNUS = 0.001;             // curve from spin (1/rad). Acceleration = BALL_MAGNUS * spin * speed, always sideways to the flight, so it bends the path without adding speed. 0 = off
 const BALL_FLICK = 0.5;        // release flick: spin added (rad/s) per rad/s of the ball's sideways whip (sideways speed / ball radius). Higher = bigger spin from a release
 const BALL_FLICK_MIN = 300;  // sideways speed (u/s) under which a release adds nothing, so gentle drops stay clean
 const BALL_FLICK_MAX = 150;  // most spin (rad/s) one release can add

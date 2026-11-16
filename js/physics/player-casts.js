@@ -193,6 +193,16 @@ mixin(Player, {
                 ball.vx += ux * MARIONETTE_V;
                 ball.vy += uy * MARIONETTE_V;
                 ball.pull = { t: MARIONETTE_FX, ux, uy, col: this.color };
+                for (const d of decoys) // the campaign swarm: every death ball this player owns gets the same shove
+                    if (d.swarm && d.owner === this) {
+                        if (ux && d.vx * ux < 0)
+                            d.vx = 0;
+                        if (uy && d.vy * uy < 0)
+                            d.vy = 0;
+                        d.vx += ux * MARIONETTE_V;
+                        d.vy += uy * MARIONETTE_V;
+                        d.pull = { t: MARIONETTE_FX, ux, uy, col: this.color };
+                    }
                 this.cd.marionette = MARIONETTE_COOLDOWN;
             } else if (c.type === 'decoy') {
                 // The lookalike appears where the cast began (replacing this team's previous one). If we are still standing in it we are pushed out the way the

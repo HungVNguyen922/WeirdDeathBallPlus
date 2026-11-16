@@ -77,7 +77,7 @@ function uiHit(x, y) {
                 return { type: 'item', i, n, slot: ui.slot };
     }
     for (const p of players)
-        if (!pickFixed && spotOf(p.id).row === 0)
+        if (!pickFixed && !campaignOn() && spotOf(p.id).row === 0) // (the campaign loadout is fixed: no swapping from the keycaps)
             for (const slot of twoSpecials ? [0, 1] : [0])
                 if (inRect(spKey(p.id, slot), x, y))
                     return { type: 'key', i: p.id, slot };

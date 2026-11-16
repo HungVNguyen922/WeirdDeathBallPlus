@@ -259,6 +259,10 @@ const gameMenu = (() => {
         if (!pickEl || typeof touch === 'undefined' || typeof SPECIALS === 'undefined')
             return;
         pickEl.textContent = '';
+        if (typeof campaign !== 'undefined' && campaign.on) {
+            pickEl.textContent = 'Your specials come from the campaign draft (the first before stage 1, the second before stage 2).';
+            return;
+        }
         if (pickFixed) {
             pickEl.textContent = 'Specials are chosen on the pick screens (before the first point and after every ' + PICK_EVERY + 'th point).';
             return;
