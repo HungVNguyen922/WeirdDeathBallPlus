@@ -83,6 +83,8 @@ for (let st = 0; st < stages; st++) {
     if (st < stages - 1) check(R('campaign.on && campaign.stage === ' + (st + 1) + ' && score[0] === 0 && score[1] === 0'), `then stage ${st + 2} starts at 0-0`);
 }
 check(R('!campaign.on'), 'clearing the last stage ends the campaign');
+check(R('campaignHome.on && campaignHome.view === "list" && campaignHome.note.includes("CLEAR")'), 'and lands on the campaign home screen');
+R('campaignHomeClose()');
 check(R('swapOn === true && NET_GAP === NET_GAP_CLASSIC && players[1].dashN === 1 && !players[1].dual'), 'the borrowed settings, the classic net and the normal boss body come back');
 sim.run('campaignStart(); campaign.stage = 3; campaignApply(); resetMatch(); campaign.draft.on = false; campaign.bannerT = 0');
 for (let i = 0; i < 6; i++) R('point(1, "scores!")');
@@ -229,6 +231,74 @@ console.log('SPAWN PROTECTION, SPREAD ARROWS, THE DECOY + ARROW BOSS');
     check(!err, 'the decoy + arrow boss runs 90 s with no errors' + (err ? ' ' + err.message : ''));
     console.log(`       decoys placed ${decoyN}, arrow volleys ${arrows}, score ${JSON.stringify(s.run('score'))}`);
     check(decoyN >= 2 && arrows >= 2, 'she places decoys and fires arrows (both keys are used)');
+}
+
+console.log('CAMPAIGN HOME SCREEN, PRACTICE, STAGE 5 SENDS BALLS');
+{
+    const s = loadSim(), R2 = c => s.run(c);
+    const press = (k, n = 3) => { R2(`players[0].keys.${k} = true`); for (let i = 0; i < n; i++) R2('update()'); R2(`players[0].keys.${k} = false`); for (let i = 0; i < 3; i++) R2('update()'); };
+    R2('campaignHomeOpen()');
+    for (let i = 0; i < 40; i++) R2('update()');
+    const y0 = R2('ball.y');
+    for (let i = 0; i < 60; i++) R2('update()');
+    check(R2('ball.y') === y0, 'the world holds still behind the home screen');
+    check(R2('campaignHomeRows().map(r => r.label).join("|")') === 'THE SIX BOSSES|BACK TO BASE GAME', 'the list shows the campaign and BACK TO BASE GAME');
+    press('dn');
+    check(R2('campaignHome.cur') === 1, 'down moves the cursor');
+    press('x');
+    check(R2('!campaignHome.on && !campaign.on'), 'weight on the first screen goes back to the base game');
+    R2('campaignHomeOpen()'); for (let i = 0; i < 40; i++) R2('update()');
+    press('z');
+    check(R2('campaignHome.view') === 'mode', 'grapple opens the campaign');
+    press('x');
+    check(R2('campaignHome.view') === 'list' && R2('campaignHome.on'), 'weight goes back one level');
+    press('z'); press('dn'); press('z');
+    check(R2('campaignHome.view') === 'stages' && R2('campaignHomeRows().length') === 7, 'stage select lists the six stages and BACK');
+    press('dn'); press('dn'); press('dn'); press('z'); // stage 4
+    check(R2('campaign.on && campaign.practice === 3 && !campaignHome.on && campaign.draft.on && campaign.draft.slot === 0'), 'practising stage 4 starts with the first draft');
+    for (let i = 0; i < 40; i++) R2('update()');
+    press('z', 3);
+    for (let i = 0; i < 120; i++) R2('update()');
+    check(R2('campaign.draft.on && campaign.draft.slot === 1 && campaign.stage === 1'), 'then the second draft');
+    for (let i = 0; i < 40; i++) R2('update()');
+    press('z', 3);
+    for (let i = 0; i < 120; i++) R2('update()');
+    check(R2('campaign.stage === 3 && !campaign.draft.on && campaign.bannerT > 0 && players[0].slots().length === 2'), 'then stage 4 itself, with both specials');
+    for (let i = 0; i < 400; i++) R2('update()');
+    for (let i = 0; i < 6; i++) R2('point(1, "scores!")');
+    R2('point(1, "scores!")');
+    check(R2('over && msg.includes("try it again")'), 'losing a practice stage says so');
+    for (let i = 0; i < 900 && R2('over'); i++) R2('update()');
+    check(R2('campaign.on && campaign.stage === 3 && !campaign.draft.on && score[0] === 0 && score[1] === 0'), 'and retries the same stage with the same loadout');
+    for (let i = 0; i < 400; i++) R2('update()');
+    for (let i = 0; i < 7; i++) R2('point(0, "scores!")');
+    for (let i = 0; i < 900 && !R2('campaignHome.on'); i++) R2('update()');
+    check(R2('!campaign.on && campaignHome.on && campaignHome.note === "STAGE 4 CLEARED"'), 'clearing a practice stage lands on the campaign screen');
+    check(R2('swapOn === true && NET_GAP === NET_GAP_CLASSIC'), 'with the base game restored');
+}
+{
+    const s = loadSim();
+    s.run('campaignStart(); campaign.stage = 4; campaignApply(); resetMatch(); campaign.draft.on = false; campaign.bannerT = 0; pick.on = false; pause = 0; ai[1].on = false');
+    check(s.run('allPlayers[1].arrowSend === 700'), 'stage 5: her arrows send balls at 700');
+    s.run('const b = allPlayers[1], me = allPlayers[0]; me.x = NETX - 300; me.y = H - 40; ball.x = NETX + 200; ball.y = 200; ball.vx = 0; ball.vy = 0; projectiles.length = 0; spawnProjectile("arrow", b, ball.x + 4, ball.y, 0, 0, { ang: 0, stuck: false, immune: 0, ghost: 0 }); update()');
+    const sp = s.run('Math.hypot(ball.vx, ball.vy)'), dir = s.run('ball.vx');
+    check(Math.abs(sp - 700) < 40 && dir < 0, 'an arrow hitting the real ball sends it at the player at ~700 (' + Math.round(sp) + ')');
+    s.run('spawnDecoy(allPlayers[1], NETX + 200, 300); const d = decoys[0]; d.vx = 0; d.vy = 0; projectiles.length = 0; spawnProjectile("arrow", allPlayers[1], d.x + 4, d.y, 0, 0, { ang: 0, stuck: false, immune: 0, ghost: 0 }); update()');
+    check(Math.abs(s.run('Math.hypot(decoys[0].vx, decoys[0].vy)') - 700) < 40, 'and a decoy too');
+}
+{
+    const s = loadSim();
+    s.run('campaignStart(); campaign.stage = 4; campaignApply(); resetMatch(); campaign.draft.on = false; campaign.bannerT = 0; pick.on = false; pause = 0; players[0].keys.l = false');
+    s.run('var nd = 0, nf = 0, fast = 0; const os = spawnDecoy; spawnDecoy = function (a, b, c) { nd++; return os(a, b, c); }; const of_ = fireArrow; fireArrow = function (p, c) { nf++; return of_(p, c); }');
+    let err = null;
+    try {
+        for (let i = 0; i < 120 * 90; i++) {
+            s.run('players[0].x = NETX - 450; players[0].y = H - 40; players[0].vx = 0; update(); if (over) { score = [0, 0]; over = false; pause = 0; } if (decoys.some(d => Math.hypot(d.vx, d.vy) > 600) || Math.hypot(ball.vx, ball.vy) > 650) fast++');
+        }
+    } catch (e) { err = e; }
+    check(!err, 'the new stage 5 AI runs 90 s with no errors' + (err ? ' ' + err.message : ''));
+    console.log(`       decoys ${s.run('nd')}, arrow volleys ${s.run('nf')}, ticks with a ball sent fast ${s.run('fast')}, score ${JSON.stringify(s.run('score'))}`);
+    check(s.run('nd') >= 5 && s.run('nf') >= 8 && s.run('fast') > 20, 'she throws decoys constantly and sends balls at you');
 }
 console.log(fails ? `\n${fails} FAILED` : '\nall passed');
 process.exit(fails ? 1 : 0);

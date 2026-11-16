@@ -91,7 +91,7 @@ function drawHud() {
     cx.textAlign = 'center';
     cx.font = 'bold 10px system-ui, sans-serif';
     cx.fillStyle = '#98a2ad';
-    cx.fillText(isSandbox() ? 'SANDBOX' : campaignOn() ? `STAGE ${campaign.stage + 1}/${CAMPAIGN_STAGES.length} · TO ${campaignGoal()}` : 'FIRST TO ' + WIN, mid, y + 15);
+    cx.fillText(isSandbox() ? 'SANDBOX' : campaignOn() ? `STAGE ${campaign.stage + 1}/${campaignStages().length} · TO ${campaignGoal()}` : 'FIRST TO ' + WIN, mid, y + 15);
     cx.font = 'bold 28px system-ui, sans-serif';
     const tl = sideSwap(0), tr = sideSwap(1); // the teams on the left and right right now
     cx.fillStyle = teamColor(tl); cx.fillText(String(score[tl]), mid - 32, y + 43);

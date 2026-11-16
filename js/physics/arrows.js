@@ -61,6 +61,18 @@ function arrowStrike(a) {
         }
     for (const b of [ball, ...decoys])
         if (Math.hypot(b.x - a.x, b.y - a.y) < b.r + ARROW_R) { // the death ball (or a decoy) takes a share of the arrow's velocity
+            if (a.owner && a.owner.arrowSend) { // a campaign boss' arrow: the ball is sent straight at the nearest enemy, fast
+                let foe = null, fd = 1e9;
+                for (const p of players)
+                    if (p.alive && p.team !== a.team) { const d = Math.hypot(p.x - b.x, p.y - b.y); if (d < fd) { fd = d; foe = p; } }
+                if (foe) {
+                    const s = a.owner.arrowSend;
+                    b.vx = (foe.x - b.x) / fd * s;
+                    b.vy = (foe.y - b.y) / fd * s;
+                    b.boost = Math.max(b.boost, Math.min(1, Math.max(0, s - BALL_VMAX) / (PAD_MAX - BALL_VMAX)));
+                    return true;
+                }
+            }
             b.vx += a.vx * ARROW_BALL_K;
             b.vy += a.vy * ARROW_BALL_K;
             const s = Math.hypot(b.vx, b.vy);

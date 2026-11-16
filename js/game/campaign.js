@@ -27,7 +27,7 @@ const CAMPAIGN_STAGES = [
     { name: 'Stage 2', boss: 'Boss 2', goal: 5, gap: 2 * PL, special: 'plinko', lvl: 0.6, skin: CAMPAIGN_SKINS[1] },
     { name: 'Stage 3', boss: 'Boss 3', goal: 7, gap: 2 * PL, special: 'dash', dashes: 2, gimmick: 'dashCut', plunge: 120, lvl: 0.7, skin: CAMPAIGN_SKINS[2] },
     { name: 'Stage 4', boss: 'Boss 4', goal: 7, gap: 4 * PL, special: 'explode', special2: 'bat', lvl: 0.8, skin: CAMPAIGN_SKINS[3] },
-    { name: 'Stage 5', boss: 'Boss 5', goal: 7, gap: 4 * PL, special: 'decoy', special2: 'arrow', arrows: 3, combo: 'decoyArrow', lvl: 0.9, skin: CAMPAIGN_SKINS[4] },
+    { name: 'Stage 5', boss: 'Boss 5', goal: 7, gap: 4 * PL, special: 'decoy', special2: 'arrow', arrows: 3, arrowSend: 700, combo: 'decoyArrow', lvl: 0.9, skin: CAMPAIGN_SKINS[4] },
     { name: 'Stage 6', boss: 'Boss 6', goal: 9, gap: 4 * PL, special: 'marionette', special2: 'explode', lvl: 1, skin: CAMPAIGN_SKINS[5], swarm: { first: 6, every: 9, max: 4, life: 30 } },
 ];
 const CAMPAIGN_DASH_CUT = 1;           // seconds every point (either way) takes off one of a 'dashCut' boss' two dash cooldowns
@@ -35,8 +35,13 @@ const CAMPAIGN_INV_T = 1;              // seconds of invincibility for a player 
 const CAMPAIGN_BANNER_T = 2.2;         // seconds of the stage banner (the world holds still)
 const CAMPAIGN_LOCK_T = 0.7;           // seconds the chosen card shows before the draft closes
 const CAMPAIGN_DRAFT_AT = [0, 1];      // the stages (0-based) that open with a draft: the first and the second special
-const campaign = { on: false, stage: 0, continues: 0, won: null, clear: false, saved: null, bannerT: 0, draft: { on: false, slot: 0, offer: [], cur: 1, t: 0, lock: 0, chosen: -1, prev: 0 } }; // won = who took the stage that just ended (0 = you, 1 = the boss); clear = the last stage was just beaten
-const campaignStage = () => CAMPAIGN_STAGES[Math.min(campaign.stage, CAMPAIGN_STAGES.length - 1)];
+// The campaigns on the home screen. Add one by adding an entry with its own stages array (same fields as CAMPAIGN_STAGES).
+const CAMPAIGN_LIST = [
+    { id: 'bosses', name: 'THE SIX BOSSES', blurb: 'Six fights, one long run. Lose a stage and it starts over.', stages: CAMPAIGN_STAGES },
+];
+const campaignStages = () => (campaign.def || CAMPAIGN_LIST[0]).stages;
+const campaign = { on: false, def: null, practice: null, stage: 0, continues: 0, won: null, clear: false, saved: null, bannerT: 0, draft: { on: false, slot: 0, offer: [], cur: 1, t: 0, lock: 0, chosen: -1, prev: 0 } }; // won = who took the stage that just ended (0 = you, 1 = the boss); clear = the last stage was just beaten
+const campaignStage = () => campaignStages()[Math.min(campaign.stage, campaignStages().length - 1)];
 const campaignGoal = () => campaignStage().goal;
 const campaignLose = () => campaignStage().lose || campaignStage().goal;
 function campaignBossReset() { // the boss' extra mechanics back to the normal game
@@ -49,6 +54,7 @@ function campaignBossReset() { // the boss' extra mechanics back to the normal g
     campaignSwarmClear();
     campaignMapSet(null);
     b.arrowN = 1;
+    b.arrowSend = 0;
     b.invT = 0;
     ai[1].combo = null;
 }
@@ -69,6 +75,7 @@ function campaignApply() {
     campaign.swarmT = s.swarm ? s.swarm.first : 0;
     campaignMapSet(s);
     b.arrowN = s.arrows || 1;            // arrows per shot (a spread)
+    b.arrowSend = s.arrowSend || 0;      // an arrow that hits any ball sends it at the other player at this speed (u/s)
     ai[1].combo = s.combo || null;       // a combined AI plan for her two specials (see aiSpDecoyArrow)
 }
 function campaignStart() {
@@ -124,14 +131,26 @@ const campaignAbort = () => campaignStop(false); // a setter in rules.js that ch
 // The text after the score message when a stage ends (rules.js point()).
 function campaignOverText(t) {
     campaign.won = t;
-    campaign.clear = t === 0 && campaign.stage >= CAMPAIGN_STAGES.length - 1;
+    campaign.clear = t === 0 && campaign.practice == null && campaign.stage >= campaignStages().length - 1;
+    if (campaign.practice != null)
+        return t === 0 ? ' - stage clear!' : ' - you lose! try it again';
     return t === 0 ? (campaign.clear ? ' - CAMPAIGN CLEAR!' : ' - stage clear!') : ' - you lose! back to stage 1';
 }
 // The WIN_PAUSE after a stage ended is over: on to the next stage, or (a loss) back to the very first one, or back to normal play after the last. Runs before the new round is set up.
 function campaignAfterOver() {
+    if (campaign.practice != null) { // practising one stage: a win goes back to the campaign screen, a loss tries the same stage again (same loadout)
+        if (campaign.won === 0) {
+            campaignFinish('STAGE ' + (campaign.stage + 1) + ' CLEARED');
+            return;
+        }
+        campaign.continues++;
+        campaignApply();
+        campaign.bannerT = CAMPAIGN_BANNER_T;
+        return;
+    }
     if (campaign.won === 0) {
         if (campaign.clear) {
-            campaignStop(true);                // (resetMatch inside runs newRound itself; rules.js then builds one more round, which is harmless)
+            campaignFinish('CAMPAIGN CLEAR!');   // (campaignStop inside runs resetMatch itself; rules.js then builds one more round, which is harmless)
             return;
         }
         campaign.stage++;
@@ -221,6 +240,86 @@ function campaignRespawn() {
     events.onNewRound();
 }
 
+// ---- THE CAMPAIGN HOME SCREEN ----
+// Its own screen between the base game and a campaign (render/campaign-fx.js draws it; the world holds still behind it, see rules.js update()). Seat 0's keys drive it: up / down move, GRAPPLE selects,
+// WEIGHT goes back (from the first screen: back to the base game). views: 'list' (the campaigns + BACK TO BASE GAME), 'mode' (one campaign: PLAY THE FULL RUN / STAGE SELECT), 'stages'.
+const CAMPAIGN_CLEARS_KEY = 'wdb-campaign-clears';
+function campaignClears(id) { try { return (JSON.parse(localStorage.getItem(CAMPAIGN_CLEARS_KEY)) || {})[id] | 0; } catch (e) { return 0; } }
+function campaignAddClear(id) { try { const o = JSON.parse(localStorage.getItem(CAMPAIGN_CLEARS_KEY)) || {}; o[id] = (o[id] | 0) + 1; localStorage.setItem(CAMPAIGN_CLEARS_KEY, JSON.stringify(o)); } catch (e) {} }
+const campaignHome = { on: false, view: 'list', cur: 0, def: null, t: 0, prev: 0, note: '' };
+function campaignHomeOpen(note = '') {
+    Object.assign(campaignHome, { on: true, view: 'list', cur: 0, def: null, t: 0, prev: keyBits(allPlayers[0].keys), note }); // (a key already held is not a press)
+}
+function campaignHomeClose() {
+    campaignHome.on = false;
+}
+// The rows of the current view: { label, sub, go() }.
+function campaignHomeRows() {
+    const h = campaignHome, rows = [];
+    if (h.view === 'list') {
+        for (const def of CAMPAIGN_LIST)
+            rows.push({ label: def.name, sub: def.stages.length + ' STAGES  ·  ' + (campaignClears(def.id) ? 'CLEARED ' + campaignClears(def.id) + 'x' : 'NOT CLEARED YET') + '  ·  ' + def.blurb, go() { h.def = def; h.view = 'mode'; h.cur = 0; } });
+        rows.push({ label: 'BACK TO BASE GAME', sub: '', go() { campaignHomeClose(); } });
+    } else if (h.view === 'mode') {
+        rows.push({ label: 'PLAY THE FULL RUN', sub: 'Stage 1 to ' + h.def.stages.length + ', picking your two specials on the way', go() { campaignRun(h.def, null); } });
+        rows.push({ label: 'STAGE SELECT', sub: 'Practise one stage on its own', go() { h.view = 'stages'; h.cur = 0; } });
+        rows.push({ label: 'BACK', sub: '', go() { h.view = 'list'; h.cur = 0; } });
+    } else {
+        h.def.stages.forEach((s, i) => rows.push({ label: 'STAGE ' + (i + 1) + '  ·  ' + s.boss.toUpperCase(), sub: 'FIRST TO ' + s.goal + '  ·  ' + (typeof campaignNetText === 'function' ? campaignNetText(s) : ''), go() { campaignRun(h.def, i); } }));
+        rows.push({ label: 'BACK', sub: '', go() { h.view = 'mode'; h.cur = 1; } });
+    }
+    return rows;
+}
+function campaignHomeBack() {
+    const h = campaignHome;
+    if (h.view === 'stages') { h.view = 'mode'; h.cur = 1; }
+    else if (h.view === 'mode') { h.view = 'list'; h.cur = 0; }
+    else campaignHomeClose();
+}
+function campaignHomeStep() { // one tick while the home screen is up
+    const h = campaignHome, bits = keyBits(allPlayers[0].keys), fresh = bits & ~h.prev;
+    h.prev = bits;
+    h.t += DT;
+    if (h.t < 0.25)
+        return;
+    const rows = campaignHomeRows();
+    if (fresh & 4) h.cur = (h.cur + rows.length - 1) % rows.length;
+    if (fresh & 8) h.cur = (h.cur + 1) % rows.length;
+    if (fresh & 32) campaignHomeBack();
+    else if (fresh & 16) rows[Math.min(h.cur, rows.length - 1)].go();
+}
+// Start a run of def: practice = null for the whole run, or the 0-based stage to practise (the drafts before it come first).
+function campaignRun(def, practice) {
+    campaignHomeClose();
+    if (campaign.on)
+        campaignStop(true);
+    campaign.def = def;
+    campaign.practice = practice;
+    campaignStart();
+}
+// The run is over (cleared, or the practice stage was): back to the base game's settings, then straight on to the campaign screen.
+function campaignFinish(note) {
+    const id = (campaign.def || CAMPAIGN_LIST[0]).id, full = campaign.practice == null;
+    campaignStop(true);
+    if (full)
+        campaignAddClear(id);
+    campaign.practice = null;
+    campaignHomeOpen(note);
+}
+// Practising stage N: the loadout drafts of the stages before it (and its own) happen first, one after another. Returns true when it moved on (to the next draft, or to the stage itself).
+function campaignPracticeNext() {
+    if (campaign.practice == null || campaign.stage >= campaign.practice)
+        return false;
+    const next = CAMPAIGN_DRAFT_AT.find(i => i > campaign.stage && i <= campaign.practice);
+    campaign.stage = next === undefined ? campaign.practice : next;
+    campaignApply();
+    resetMatch();
+    if (next === undefined)
+        campaign.bannerT = CAMPAIGN_BANNER_T;
+    else
+        campaignBegin();
+    return true;
+}
 // ---- THE LOADOUT DRAFT ----
 // Your specials start empty each run: special = your first (key 1), special2 = your second (null until stage 2's draft).
 function campaignLoadoutReset() {
@@ -272,7 +371,8 @@ function campaignHold() {
                     q.prevSp2 = q.keys.sp2;
                     q.prevX = q.keys.x;
                 }
-                campaign.bannerT = CAMPAIGN_BANNER_T;
+                if (!campaignPracticeNext())
+                    campaign.bannerT = CAMPAIGN_BANNER_T;
             }
         } else if (d.t > 0.35) { // (the cards are still dealing in)
             if (fresh & 1)

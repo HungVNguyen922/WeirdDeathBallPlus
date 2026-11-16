@@ -73,7 +73,62 @@ function drawDraft() {
         cx.fillText('LEFT / RIGHT: MOVE     GRAPPLE OR SPECIAL: CHOOSE', W / 2, y0 + CH_ + 40);
     cx.restore();
 }
+// The campaign home screen: a list of rows (campaignHomeRows) on a card each, the selected one lit.
+function drawCampaignHome() {
+    const h = campaignHome, rows = campaignHomeRows(), tm = performance.now(), p = allPlayers[0], RW = 640, RH = 54, GAP = 8, vis = 7;
+    const first = Math.max(0, Math.min(rows.length - vis, h.cur - 3)), shown = rows.slice(first, first + vis), y0 = 150;
+    cx.save();
+    cx.fillStyle = 'rgba(9,5,18,.96)';
+    cx.fillRect(0, 0, W, H);
+    const wash = cx.createLinearGradient(0, 0, W, 0);
+    wash.addColorStop(0, 'rgba(' + sideRgb(0) + ',.22)'); wash.addColorStop(0.4, 'rgba(' + sideRgb(0) + ',0)');
+    wash.addColorStop(0.6, 'rgba(' + sideRgb(1) + ',0)'); wash.addColorStop(1, 'rgba(' + sideRgb(1) + ',.22)');
+    cx.fillStyle = wash;
+    cx.fillRect(0, 0, W, H);
+    cx.textAlign = 'center'; cx.lineJoin = 'round';
+    const title = h.view === 'list' ? 'CAMPAIGN' : h.view === 'mode' ? h.def.name : 'STAGE SELECT', a = fxClamp(h.t / 0.25);
+    cx.globalAlpha = a;
+    cx.font = 'italic 800 40px system-ui, sans-serif'; cx.lineWidth = 6; cx.strokeStyle = '#000';
+    cx.strokeText(title, W / 2, 80); cx.fillStyle = '#fff'; cx.fillText(title, W / 2, 80);
+    if (h.note) {
+        cx.font = 'italic 800 20px system-ui, sans-serif'; cx.fillStyle = FX_GOLD;
+        cx.fillText(h.note, W / 2, 118);
+    } else if (h.view !== 'list') {
+        cx.font = 'bold 12px system-ui, sans-serif'; cx.fillStyle = '#98a2ad';
+        cx.fillText(h.view === 'stages' ? h.def.name : h.def.blurb.toUpperCase(), W / 2, 118);
+    }
+    cx.globalAlpha = 1;
+    shown.forEach((r, j) => {
+        const i = first + j, sel = h.cur === i, u = fxOutBack((h.t - 0.05 * j) / 0.35), x = W / 2 - RW / 2, y = y0 + j * (RH + GAP) + (1 - fxClamp(u)) * 40;
+        if (u <= 0)
+            return;
+        cx.save();
+        cx.globalAlpha = fxClamp(u);
+        cx.translate(W / 2, y + RH / 2); const sc = sel ? 1 + 0.012 * Math.sin(tm / 130) : 1; cx.scale(sc, sc); cx.translate(-W / 2, -(y + RH / 2));
+        cx.fillStyle = sel ? '#2a1850' : '#1a0e30'; cx.strokeStyle = sel ? p.color : '#4b2f7a'; cx.lineWidth = sel ? 4 : 2;
+        cx.beginPath(); cx.roundRect(x, y, RW, RH, 12); cx.fill(); cx.stroke();
+        cx.textAlign = 'left';
+        cx.font = 'bold 20px system-ui, sans-serif'; cx.fillStyle = sel ? '#fff' : '#d8d2e8';
+        cx.fillText(r.label, x + 22, y + (r.sub ? 24 : 34));
+        if (r.sub) {
+            cx.font = '12px system-ui, sans-serif'; cx.fillStyle = '#98a2ad';
+            cx.fillText(r.sub.length > 84 ? r.sub.slice(0, 83) + '…' : r.sub, x + 22, y + 43);
+        }
+        if (sel) {
+            cx.textAlign = 'right'; cx.font = 'bold 22px system-ui, sans-serif'; cx.fillStyle = p.color;
+            cx.fillText('\u25B6', x + RW - 20, y + 34);
+        }
+        cx.restore();
+    });
+    cx.textAlign = 'center'; cx.font = 'bold 11px system-ui, sans-serif'; cx.fillStyle = '#98a2ad';
+    cx.fillText('UP / DOWN: MOVE     GRAPPLE: SELECT     WEIGHT: ' + (h.view === 'list' ? 'BACK TO BASE GAME' : 'BACK'), W / 2, H - 22);
+    cx.restore();
+}
 function drawCampaignFx() { // after the arena, over the playing area (render.js)
+    if (campaignHome.on) {
+        drawCampaignHome();
+        return;
+    }
     if (!campaign.on)
         return;
     if (campaign.draft.on)

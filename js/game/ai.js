@@ -1181,51 +1181,30 @@ function aiSpDecoy(me, A, k) {
     A.spCool = 1;
 }
 
-// ---- DECOY + ARROW (the stage 5 boss): drop a decoy, then bat it into the other player with an arrow. An arrow that reaches a decoy adds ARROW_BALL_K of its velocity to it, and the decoy then
-// bounces off the walls / ceiling like the ball, so the plan tries 24 angles x 2 charges, flies each arrow to the decoy, and rolls the decoy forward (a ricochet shot is just one that rolls into you).
-// Value: it reaches an enemy = 300 - ticks * 0.4; else if it ends on THEIR side of the net, up to 140 for how close it ends (a decoy parked on them, ready for the next arrow). ----
+// ---- DECOY + ARROW (the stage 5 boss): her arrows send ANY ball at the other player (arrowSend), so the plan is only: always have a decoy out, and put an arrow into a ball (the decoy first, else the
+// death ball) as soon as one can connect. A shot's cost = the time to charge / turn to it + the arrow's flight; she fires when a shot costs under 2.2 s. ----
 const aiKeyOf = (me, id) => (me.slots().find(s => s[1] === id) || ['sp'])[0];
 const AI_DCA_ANGS = Array.from({ length: 24 }, (_, i) => -Math.PI + i * Math.PI / 12);
-function aiDcaRoll(me, d0, delay, vx, vy) {
-    const fx = snapshotFx(), b = Object.assign(new Ball(), d0), foes = players.filter(q => q.team !== me.team && q.alive).map(aiEnemySnap);
-    let minD = 1e9, v = null;
-    for (let n = 0; n < 150 + delay && v === null; n++) {
-        if (n === delay) {
-            b.vx += vx;
-            b.vy += vy;
-            const s = Math.hypot(b.vx, b.vy);
-            if (s > BALL_VMAX) b.boost = Math.max(b.boost, Math.min(1, (s - BALL_VMAX) / (PAD_MAX - BALL_VMAX)));
-        }
-        b.step();
-        for (const e of foes) {
-            aiEnemyStep(e);
-            const d = Math.hypot(b.x - e.x, b.y - e.y);
-            if (n >= delay) minD = Math.min(minD, d);
-            if (n >= delay && d < e.r + b.r && v === null) v = 300 - n * 0.4;
-        }
-    }
-    restoreFx(fx);
-    if (v !== null) return v;
-    return (b.x - NETX) * aiSide(me) > 0 ? Math.max(0, 140 - minD * 0.15) : 0;
-}
-function aiDcaPlan(me, d) { // { v, ang, ch }: the best arrow (angle, charge) to hit decoy d with, or null
+function aiDcaShot(me, T) { // { cost, ang, ch }: the quickest arrow that reaches body T (straight line + gravity against T's ballistic path), or null
     let best = null;
-    for (const ch of [0.5, 1]) {
+    for (const ch of [0.3, 0.6, 1]) {
         const V = ARROW_V_MIN + (ARROW_V_MAX - ARROW_V_MIN) * ch;
         for (const ang of AI_DCA_ANGS) {
             const ux = Math.cos(ang), uy = Math.sin(ang), d0 = me.r + ARROW_R + 2;
             let ax = me.x + ux * d0, ay = me.y + uy * d0, avx = ux * V, avy = uy * V, hit = -1;
-            for (let n = 0; n < 150; n++) {
+            if (Math.hypot(ax - T.x, ay - T.y) < T.r + ARROW_R)
+                hit = 0;
+            for (let n = 0; n < 150 && hit < 0; n++) {
                 avy += ARROW_G * DT;
                 ax += avx * DT;
                 ay += avy * DT;
-                const t = (n + 1) * DT, bx = d.x + d.vx * t, by = d.y + d.vy * t + 0.5 * BALL_G * t * t;
-                if (Math.hypot(ax - bx, ay - by) < d.r + ARROW_R) { hit = n; break; }
+                const t = (n + 1) * DT, bx = T.x + T.vx * t, by = T.y + T.vy * t + 0.5 * BALL_G * t * t;
+                if (Math.hypot(ax - bx, ay - by) < T.r + ARROW_R) { hit = n; break; }
                 if (arrowHitsTerrain({ x: ax, y: ay })) break; // it would stick in a wall first
             }
             if (hit < 0) continue;
-            const v = aiDcaRoll(me, d, hit, avx * ARROW_BALL_K, avy * ARROW_BALL_K);
-            if (!best || v > best.v) best = { v, ang, ch };
+            const cost = Math.max(ch * ARROW_CHARGE_T, Math.abs(wrapAng(ang - me.arrowAng)) / ARROW_TURN) + hit * DT;
+            if (!best || cost < best.cost) best = { cost, ang, ch };
         }
     }
     return best;
@@ -1233,43 +1212,45 @@ function aiDcaPlan(me, d) { // { v, ang, ch }: the best arrow (angle, charge) to
 function aiSpDecoyArrow(me, A, k) {
     if (me.onBall || me.rope || me.pending || me.casts.length)
         return;
-    if (Math.hypot(ball.x - me.x, ball.y - me.y) < 160 || aiPathMin(me, ball, 0, false, me.r, W - me.r) < AI_THREAT * 2)
-        return; // defend first (aiming roots us to the spot)
-    const mine = decoys.find(d => d.owner === me && !d.swarm);
-    A.dcaAge = mine ? (A.dcaAge || 0) + 2 * DT : 0;
+    const close = Math.hypot(ball.x - me.x, ball.y - me.y) < 160 || aiPathMin(me, ball, 0, false, me.r, W - me.r) < AI_THREAT * 2; // (aiming roots us to the spot: not with the ball about to arrive)
+    const threat = aiForecast(ball).end === -aiGoalSign(me), mine = decoys.find(d => d.owner === me && !d.swarm);
     A.dcaT = (A.dcaT || 0) - 1;
-    if (mine && me.cd.arrow <= 0 && A.dcaT <= 0) {
-        A.dcaT = 12; // (a plan is a few dozen rollouts: five times a second is plenty)
-        const plan = aiDcaPlan(me, mine);
-        if (plan && (plan.v >= 150 || (plan.v >= 70 && (mine.x - NETX) * aiSide(me) <= 0))) {
+    if (me.cd.arrow <= 0 && A.dcaT <= 0 && !close) {
+        A.dcaT = 8; // (a plan is a few dozen steps: fifteen times a second is plenty)
+        let shot = mine ? aiDcaShot(me, mine) : null, at = 'decoy';
+        if (!shot || shot.cost > 2.2 || threat) { // the death ball itself: it is sent at them too (and it saves us when it is coming our way)
+            const s2 = aiDcaShot(me, ball);
+            if (s2 && (!shot || s2.cost < shot.cost - 0.3 || shot.cost > 2.2)) { shot = s2; at = 'ball'; }
+        }
+        if (shot && shot.cost < (threat ? 1.4 : 2.2)) {
             const key = aiKeyOf(me, 'arrow');
             k[key] = true;
-            A.sp = { id: 'dca', t: 0, rp: 0.3, ang: plan.ang, ch: plan.ch, key };
+            A.sp = { id: 'dca', t: 0, rp: 0.25, at, ang: shot.ang, ch: shot.ch, key };
             return;
         }
     }
-    if (me.cd.decoy <= 0 && me.ground && me.cd.arrow < 1.5 && (!mine || A.dcaAge > 7)) { // a fresh one when we have none (or the old one has gone nowhere for a while)
+    if (me.cd.decoy <= 0 && me.ground && !close && !threat) { // a decoy every time one is ready (a new one replaces the old)
         k[aiKeyOf(me, 'decoy')] = true;
         A.spCool = 1;
-        A.dcaAge = 0;
     }
 }
 function aiDcaRun(me, A, k, S) {
     S.t += DT;
-    const c = me.casting('arrow'), mine = decoys.find(d => d.owner === me && !d.swarm);
-    if (!c || !mine || S.t > 2.6) { A.sp = null; A.spCool = 0.5; return; }
-    if ((S.rp -= DT) <= 0) { // the decoy moves: look again
-        S.rp = 0.3;
-        const p = aiDcaPlan(me, mine);
-        if (p && p.v >= 70) { S.ang = p.ang; S.ch = p.ch; }
+    const c = me.casting('arrow'), T = S.at === 'ball' ? ball : decoys.find(d => d.owner === me && !d.swarm);
+    if (!c && S.t < 0.05 && T) { k[S.key] = true; return; } // (the cast starts a tick or two after the press: keep holding, or the arrow is let go at once, uncharged)
+    if (!c || !T || S.t > 2.8) { A.sp = null; A.spCool = 0.3; return; }
+    if ((S.rp -= DT) <= 0) { // the target moves: look again
+        S.rp = 0.25;
+        const p = aiDcaShot(me, T);
+        if (p && p.cost < 2.4) { S.ang = p.ang; S.ch = p.ch; }
     }
-    const diff = wrapAng(S.ang - c.ang), danger = !!aiDodge(me, ball, me.r, W - me.r);
+    const diff = wrapAng(S.ang - c.ang), danger = Math.hypot(ball.x - me.x, ball.y - me.y) < 110;
     k.l = diff < -0.06; k.r = diff > 0.06; k.up = false; k.dn = false;
     k[S.key] = true;
-    if (danger || (c.charge >= S.ch && Math.abs(diff) < 0.08)) {
+    if (danger || (c.charge >= S.ch && Math.abs(diff) < 0.1)) {
         k[S.key] = false;
         A.sp = null;
-        A.spCool = 0.4;
+        A.spCool = 0.3;
     }
 }
 

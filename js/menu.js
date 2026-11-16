@@ -157,8 +157,8 @@ const gameMenu = (() => {
     function labelCamp() {
         if (!campBtn || typeof campaign === 'undefined')
             return;
-        campBtn.textContent = campaign.on ? `Campaign: Stage ${campaign.stage + 1}/${CAMPAIGN_STAGES.length}` : 'Campaign: Off';
-        campBtn.classList.toggle('on', campaign.on);
+        campBtn.textContent = campaign.on ? `Campaign: Stage ${campaign.stage + 1}/${campaignStages().length}` : campaignHome.on ? 'Campaign: Menu' : 'Campaign: Off';
+        campBtn.classList.toggle('on', campaign.on || campaignHome.on);
         campBtn.disabled = !!net.on;
         campBtn.title = net.on ? 'The campaign is solo play: leave the online room first.' : campTitle;
     }
@@ -171,8 +171,12 @@ const gameMenu = (() => {
                     return;
                 campaignStop(true);
             }
-            else
-                campaignStart();
+            else if (campaignHome.on)
+                campaignHomeClose();
+            else {
+                campaignHomeOpen(); // the campaign has its own home screen: picking a run starts it
+                close();
+            }
             labelCamp();
             labelTwo();
             labelSwap();

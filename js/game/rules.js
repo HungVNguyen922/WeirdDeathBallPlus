@@ -288,6 +288,10 @@ function update() {
             pegs.splice(i, 1); // fizzled out
     if (!players.length)
         return;
+    if (typeof campaignHome !== 'undefined' && campaignHome.on) { // the campaign home screen is up: the world holds still
+        campaignHomeStep();
+        return;
+    }
     const sandbox = isSandbox();
     if (swapBanner > 0) { // the sides just changed: hold the world still while the banner plays
         swapBanner = Math.max(0, swapBanner - DT);
