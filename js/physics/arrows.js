@@ -61,6 +61,8 @@ function arrowStrike(a) {
         }
     for (const b of [ball, ...decoys])
         if (Math.hypot(b.x - a.x, b.y - a.y) < b.r + ARROW_R) { // the death ball (or a decoy) takes a share of the arrow's velocity
+            if (a.owner && b === ball)
+                ball.lastGrab = a.owner.id; // (whose ball it is now: campaign grazes and passes count what the boss touched last)
             if (a.owner && a.owner.arrowSend) { // a campaign boss' arrow: the ball is sent straight at the nearest enemy, fast
                 let foe = null, fd = 1e9;
                 for (const p of players)

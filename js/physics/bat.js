@@ -62,6 +62,8 @@ function batStep(p, c, ball) {
             const ovx = b.vx, ovy = b.vy;
             b.vx = nvx;
             b.vy = nvy;
+            if (b === ball && !p.sim)
+                ball.lastGrab = p.id; // (a bat hit counts as a touch: campaign grazes and passes)
             if (b.type === 'block') { // a block spins by where the bat caught it
                 const cd2 = Math.max(p.r, d - b.r);
                 bkSpin(b, p.x + ox * cd2, p.y + oy * cd2, nvx - ovx, nvy - ovy);

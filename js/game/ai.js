@@ -570,6 +570,8 @@ const AI_SLICE = 96, AI_PRE = 8;          // jump jobs: physics steps per tick, 
 const AI_SLICE_H = 48, AI_PRE_H = 24;      // held-plan jobs: bigger, because they must finish within their latency window (AI_PRE_H ticks) to be about the moment they land
 const AI_JUMP_STEPS = 180, AI_SAFE_STEPS = 84, AI_HELD_STEPS = 96, AI_AFTER_STEPS = 72, AI_LOOP_STEPS = 180, AI_LOOP_MAX = 2.4, AI_STALL_MAX = 2.2; // look-ahead lengths (steps): a jump, the safe time after latching, a held plan, the time after a release
 const AI_WAIT_FRAC = 0.5; // where the AI waits when the ball is not its business: 0 = against the net, 0.5 = the midline of its half (the book's Midline Defense), 1 = at its goal. (The old spot was 90 u from the net, about 0.19.)
+const AI_SPEED_OF_LIGHT = true;            // a dash with no cooldown (dashMin 0) is used as locomotion
+const AI_HELD_FRAC = 0.8;                  // how far back towards our goal we wait while the enemy holds the ball over our half (1 = at the goal line)
 const aiMid = me => NETX - aiSide(me) * AI_WAIT_FRAC * NETX;
 // Grapple-jump launches: tap the grapple on the floor with weight held (weight multiplies the kick, and each tap within 1.5 s of the last makes the next one stronger and adds to our
 // upward speed), then fly up with jump held. n taps reach higher, faster, than a plain jump; the look-ahead decides which n works.
@@ -600,17 +602,20 @@ function aiHeldKeys(me, b, hs, k) {
         k.l = tx < -0.3;
         k.up = ty < 0.3;
     }
-    if (dashPlan && hs.dashT === null && hs.t >= 0.04 && aiCanDash(me, hs)) { // the dash direction is whatever arrows are held when the key goes down
+    const sol = me.dashMin === 0 && (hs.nd || 0) < 6 && (hs.dashT === null || hs.t - hs.dashT > 0.22); // SPEED OF LIGHT: no cooldown, so a swing can be dashed again and again (and the plan is not 'spent' after the first)
+    if (dashPlan && (hs.dashT === null || sol) && hs.t >= 0.04 && aiCanDash(me, hs)) { // the dash direction is whatever arrows are held when the key goes down
         k[aiDashKey(me)] = true;
         k.up = plan === 'shootU';
         k.r = s > 0;
         k.l = s < 0;
         hs.dashT = hs.t;
+        hs.nd = (hs.nd || 0) + 1;
     }
-    else if (AI_LOOP_DASH && loop && hs.dashT === null && hs.t >= 0.3 && aiCanDash(me, hs)) { // dash along the orbit's tangent to keep the loop fast
+    else if (AI_LOOP_DASH && loop && (hs.dashT === null || sol) && hs.t >= 0.3 && aiCanDash(me, hs)) { // dash along the orbit's tangent to keep the loop fast
         const rx = me.x - tb.x, ry = me.y - tb.y, d = Math.hypot(rx, ry) || 1, sp = plan === 'loopO' ? s : -s, tx = sp * -ry / d, ty = sp * rx / d;
         k[aiDashKey(me)] = true; k.r = tx > 0.3; k.l = tx < -0.3; k.up = ty < -0.3; k.dn = ty > 0.3;
         hs.dashT = hs.t;
+        hs.nd = (hs.nd || 0) + 1;
     }
     if ((shoot || loop) && hs.n % 2 === 0 && (hs.dashT !== null ? hs.t - hs.dashT > 0.14 : hs.t > (loop ? 0.35 : 0.4)) && (aiFlight(tb, me.team) || aiBallHit(tb, me) >= AI_HIT_MIN))
         k.z = false;                           // it will score (or hit an enemy that cannot get out of the way): let go
@@ -642,6 +647,10 @@ function aiEngageKeys(me, b, E, k) {
         k[dx > 0 ? 'r' : 'l'] = true;
     else if (E.mode === 'away' && Math.abs(dx) < 130)
         k[dx > 0 ? 'l' : 'r'] = true;      // too close to latch from here: open the gap while we rise
+    if (me.dashMin === 0 && E.mode === 'toward' && E.t > 0.12 && E.t - (E.dashT === undefined ? -1 : E.dashT) > 0.3 && Math.abs(dx) > 340 && me.dashSlot() >= 0 && !me.casts.length) { // SPEED OF LIGHT: dash across the gap in mid-flight (never near enough to run into it)
+        k[aiDashKey(me)] = true; k.r = dx > 0; k.l = dx < 0; k.dn = false;
+        E.dashT = E.t;
+    }
     if (!me.ground && Math.hypot(dx, b.y - me.y) < RANGE + 30) { // (candidates() is the expensive part, so only ask when the ball could be in reach)
         const near = aiNearest(me, b);
         if (near && near.b && near.ball === b) // the body we are after is the nearest thing in reach: latch on.
@@ -1306,16 +1315,47 @@ function aiDcaRun(me, A, k, S) {
 }
 
 // ---- DASH (the loop dash is in aiHeldKeys): get back to a slow, far-away ball quickly ----
+const aiDashSafe = (me, dir, dodge) => { // a dash goes ~300 u and keeps its speed a while: never to somewhere nearer the death ball than we are now, or within its reach a moment from now (it kills)
+    const bd = Math.hypot(ball.x - me.x, ball.y - me.y), dest = me.x + dir * 300, bx = ball.x + ball.vx * 0.3, by = ball.y + ball.vy * 0.3, dd = Math.hypot(ball.x - dest, ball.y - me.y);
+    return !(dd < Math.max(200, bd) && !(dodge && dd > bd)) && Math.hypot(bx - dest, by - me.y) >= 130 && !(dir * (ball.x - me.x) > 0 && Math.abs(ball.x - me.x) < 340 && Math.abs(ball.y - me.y) < 110 && !dodge);
+};
 function aiSpDash(me, A, k) {
+    if (me.dashSlot() >= 0 && !me.onBall && !me.casts.length && ball.vy > 250 && ball.vy > 1.5 * Math.abs(ball.vx) && (ball.x - NETX) * aiSide(me) < 60) { // a steep shot is coming down on our half: it will land and roll to our goal, so dash back past where it lands and meet it there
+        const g = -aiSide(me), f = aiForecast();
+        let land = null;
+        for (let q = 0; q < f.path.length && q < 150 && !land; q++)
+            if (f.path[q].y > aiFloorY(f.path[q].x) - 30)
+                land = f.path[q];
+        const ahead = land ? (land.x - me.x) * g : -1;
+        if (land && ahead > -140 && ahead < 250 && (me.x + g * 300 - land.x) * g >= 60 && aiSpotOk(me.x + g * 300, me.y, me.r)) {
+            k[aiDashKey(me)] = true; k.r = g > 0; k.l = g < 0; k.up = false; k.dn = false;
+            A.spCool = 0.5;
+            return;
+        }
+    }
+    const sol = me.dashMin === 0 && AI_SPEED_OF_LIGHT; // SPEED OF LIGHT (campaign stage 3): no cooldown at all, so a dash is how she walks, on the ground and in the air
+    if (sol && me.dashSlot() >= 0 && !me.onBall && !me.casts.length) {
+        const dg = A.mvGap || 0, bd = Math.hypot(ball.x - me.x, ball.y - me.y), dodge = bd < 300 ? aiDodge(me, ball, me.r, W - me.r) : null;
+        let dir = 0;
+        if (dodge)
+            dir = dodge.dir;                                   // the death ball is coming: a dash is the quickest way out of its path
+        else if (Math.abs(dg) > 90 && bd > 220 && !A.job && !A.E && !A.X && !A.V && me.ground)                               // (more dashes in the air come from the dodge, the engage jumps and the swing itself)
+            dir = Math.sign(dg);                               // (in the air too, when it is a long way)                               // wherever she is heading, dash there
+        if (dir && aiDashSafe(me, dir, dodge)) {
+            k[aiDashKey(me)] = true; k.r = dir > 0; k.l = dir < 0; k.up = false; k.dn = false;
+            A.spCool = 0.2;
+            return;
+        }
+    }
     if (me.dashSlot() < 0 || me.onBall || me.casts.length || !me.ground || !aiCanGrip(me))
         return;
     const b = AIB, dx = b.x - me.x, two = me.dashN > 1; // a boss with two dashes spends them freely: they are there for uptime (back into play quickly, high tempo), not for the shots
-    if (two && aiFlight(b, 1 - me.team) && Math.abs(dx) > 220) { // recover: their shot is on its way to our goal and we are not there yet
+    if (two && aiFlight(b, 1 - me.team) && Math.abs(dx) > 220 && (!sol || aiDashSafe(me, Math.sign(dx), null))) { // recover: their shot is on its way to our goal and we are not there yet
         k[aiDashKey(me)] = true; k.r = dx > 0; k.l = dx < 0; k.up = false; k.dn = false;
         A.spCool = 0.35;
         return;
     }
-    if ((b.x - NETX) * aiSide(me) >= 40 || Math.abs(dx) < (two ? 300 : 650) || Math.hypot(b.vx, b.vy) > (two ? 380 : 200))
+    if ((b.x - NETX) * aiSide(me) >= 40 || Math.abs(dx) < (two ? 300 : 650) || Math.hypot(b.vx, b.vy) > (two ? 380 : 200) || sol && !aiDashSafe(me, Math.sign(dx), null))
         return;
     k[aiDashKey(me)] = true; k.r = dx > 0; k.l = dx < 0; k.up = false; k.dn = false;
     A.spCool = two ? 0.4 : 1;
@@ -1713,6 +1753,18 @@ function aiSpExplode(me, A, k) {
         A.spCool = 0.5;
     }
 }
+// Is a body of radius r allowed to stand here: inside the arena, clear of the floor, the net, the goal ledges and the goal mouths (with a margin)? Used for teleports.
+function aiSpotOk(x, y, r) {
+    if (x < PL + r + 8 || x > W - PL - r - 8 || y < r + 8 || y + r + 8 > aiFloorY(x))
+        return false;
+    for (const [list, t] of [[SEGS, 8], [LEDGES, LEDGE_T + 8], [NETSEGS, NET_T + 8]])
+        for (const sg of list) {
+            const p = nearestOnSeg(sg, x, y);
+            if (Math.hypot(x - p.x, y - p.y) < r + t)
+                return false;
+        }
+    return true;
+}
 // INSTANT TRANSMISSION (the stage 4 boss, combo 'transmit'): her Warp does not drop a marker: it lets her appear anywhere within 1 PL of the ball (the Warp cooldown still applies), and she plays
 // Explode as eagerly as it can be played: any blast that is a little better than none goes off, and the teleport is used to get the blast in range (teleport, then blast in the same tick).
 function aiSpTransmit(me, A, k) {
@@ -1734,22 +1786,27 @@ function aiSpTransmit(me, A, k) {
     if (me.cd.warp > 0 || me.onBall || me.rope || me.pending)
         return;
     const best = { v: -Infinity, x: 0, y: 0 };
-    for (let a = 0; a < 8; a++) {              // eight spots on a ring just outside the ball's body (touching it would kill us)
-        const ang = a * Math.PI / 4, x = ball.x + Math.cos(ang) * (ball.r + me.r + 6), y = ball.y + Math.sin(ang) * (ball.r + me.r + 6);
-        if (x < me.r + 4 || x > W - me.r - 4 || y < me.r + 4 || y > aiFloorY(x) - me.r - 2 || Math.abs(x - NETX) < me.r + 14 && y > aiFloorY(NETX) - 120)
-            continue;
-        if (foes.some(q => Math.hypot(q.x - x, q.y - y) < q.r + me.r + 30))
-            continue;                          // not into somebody's face (their body is a hazard if they carry the death ball; keep clear)
-        const pr = Object.create(me);
-        pr.x = x;
-        pr.y = y;
-        const r = aiExplodeValueFor(pr, ball, snaps);
-        if (ok(r) && r.v1 > best.v) {
-            best.v = r.v1;
-            best.x = x;
-            best.y = y;
+    for (const rad of [ball.r + me.r + 24, ball.r + me.r + 48])   // two rings round the ball, outside its body (touching it kills us) but well inside the blast
+        for (let a = 0; a < 8; a++) {
+            const ang = a * Math.PI / 4, x = ball.x + Math.cos(ang) * rad, y = ball.y + Math.sin(ang) * rad;
+            if (!aiSpotOk(x, y, me.r))
+                continue;                      // (inside a wall, the net, a ledge or the floor, or in a goal mouth: never)
+            let hit = false;                   // the ball must not be able to reach that spot in the next third of a second (it is still moving when we arrive)
+            for (let t = 0; t <= 0.35 && !hit; t += 0.05)
+                if (Math.hypot(ball.x + ball.vx * t - x, ball.y + ball.vy * t - y) < ball.r + me.r + 16)
+                    hit = true;
+            if (hit || foes.some(q => Math.hypot(q.x - x, q.y - y) < q.r + me.r + 30))
+                continue;                      // (and not into somebody's face: their body is a hazard if they carry the death ball)
+            const pr = Object.create(me);
+            pr.x = x;
+            pr.y = y;
+            const r = aiExplodeValueFor(pr, ball, snaps);
+            if (ok(r) && r.v1 > best.v) {
+                best.v = r.v1;
+                best.x = x;
+                best.y = y;
+            }
         }
-    }
     if (best.v === -Infinity)
         return;
     me.warpFx = { t: WARP_FX, ax: me.x, ay: me.y, bx: best.x, by: best.y };
@@ -2064,9 +2121,12 @@ function* aiRetreatJob(me0, frozen, out) {
 }
 
 function aiFree(i, me, A, k) { // keys for an AI that is not tethered
+    A.mvGap = 0;
+    A.retreat = false;
     const s = aiSide(me), b = AIB, dx = b.x - me.x, away = (me.x - NETX) * s > 0; // away: we are over the net, on their half (a dash shot carries us there)
     const left = aiLeft(me.team), lo = left || away ? me.r : NETX + me.r, hi = left && !away ? NETX - me.r : W - me.r; // the room to dodge in: our half, or the whole arena when we are on theirs (the dodge model clamps to it, so a clamp to the wrong half 'teleports' us to the net and hides the ball)
     const mine = (b.x - NETX) * s < 40 || (away && Math.abs(b.x - me.x) < 450);        // the ball is on our half (or right at the net)
+    const heldNear = players.some(q => q.team !== me.team && q.alive && q.onBall && q.tball === ball) && (mine || Math.abs(ball.x - NETX) < 300); // an enemy has the ball near the net: it can be swung down at our goal
     if (A.E) {                                 // in an engage jump: carry it out
         aiEngageKeys(me, b, A.E, k);
         if (me.ground && A.E.t > 0.3) {
@@ -2226,7 +2286,7 @@ function aiFree(i, me, A, k) { // keys for an AI that is not tethered
             A.job = { kind: 'retreat', gen: aiRetreatJob(me, aiNoKeys(), A.out), out: A.out, frozen: aiNoKeys(), age: 0, done: false };
             return;
         }
-    } else if (AI_AWAY && !players.some(q => q !== me && q.team === me.team) && grip0 && me.ground && A.invCool <= 0 && aiInvadeSafe(me)) { // 1v1: an enemy holding the ball is busy: go and crash them
+    } else if (AI_AWAY && !heldNear && !players.some(q => q !== me && q.team === me.team) && grip0 && me.ground && A.invCool <= 0 && aiInvadeSafe(me)) { // 1v1: an enemy holding the ball is busy: go and crash them
         const tgt = aiInvadeTarget(me, b);
         if (tgt && (tgt.onBall || aiInvadeEager(me, tgt))) {
             A.out = {};
@@ -2259,7 +2319,16 @@ function aiFree(i, me, A, k) { // keys for an AI that is not tethered
     }
     // the approach: run at the ball on t[2, 4, 0]he side we are already on, stopping a stand-off short of it (the jump check below picks the moment to go)
     let tx = null;
-    if (AI_CONTEST && grip && mine && !arr && aiUrgent(me)) { // the ball is going in and no jump is planned: go and stand where it will be, do not wait on the midline
+    // An enemy holding the ball over our half can swing it down steeply: it lands, loses its bounce and rolls to our goal faster than we can start running (we accelerate slowly). So while they hold
+    // it we do not wait under it: we drop back towards our goal, where a ball rolling along the floor at us can be hopped and grabbed.
+    const held = grip && heldNear && !me.onBall;
+    A.retreat = held;
+    if (held) {
+        tx = Math.max(lo, Math.min(hi, NETX - s * NETX * AI_HELD_FRAC));
+        if (!me.ground && me.y < aiFloorY(me.x) - 70 && !aiDodge(me, ball, lo, hi))
+            k.x = true;                        // up in the air near the net (a contest that did not land): weight it, drop to the floor fast and get running (the weight key makes us fall quicker)
+    }
+    else if (AI_CONTEST && grip && mine && !arr && aiUrgent(me)) { // the ball is going in and no jump is planned: go and stand where it will be, do not wait on the midline
         const f = aiForecast(), p = f.path.length ? f.path[Math.min(f.path.length - 1, Math.max(0, aiTickN - f.stamp) + 45)] : b;
         tx = Math.max(lo, Math.min(hi, p.x + (me.x >= p.x ? 1 : -1) * (A.stand || AI_STAND)));
     } else if (grip && mine && Math.abs(dx) < 500) {
@@ -2271,6 +2340,7 @@ function aiFree(i, me, A, k) { // keys for an AI that is not tethered
     } else
         tx = aiMid(me);                        // otherwise wait on the midline of our half (Midline Defense), not up against the net (Quell Rank Range)
     const gap = tx - me.x, toward = me.vx * Math.sign(gap);
+    A.mvGap = gap;                             // (where we are heading: a dash with no cooldown uses it)
     if (Math.abs(gap) > 12) {
         const brake = toward > 0 && Math.abs(gap) < toward * 0.5; // too fast to stop in time: back off the throttle
         k.r = gap > 0 !== brake;

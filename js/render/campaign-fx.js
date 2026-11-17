@@ -135,13 +135,21 @@ function drawCampaignHud() {
     cx.strokeText(txt, mid, y);
     cx.fillStyle = t !== null && t < 10 && Math.floor(performance.now() / 250) % 2 ? '#ff5252' : '#e8e8e4';
     cx.fillText(txt, mid, y);
+    let row = 0; // the awards stack as a list above the plaque, stacking upward from just above the plaque; each fades out on its own
     for (const p of campaign.pops) {
-        const a = 1 - Math.max(0, p.t - 0.9) / 0.5, yy = p.y - p.t * 26;
+        const a = 1 - Math.max(0, p.t - 1.6) / 0.6, yy = y - 80 - (p.big ? 0 : row++ * 18);
         cx.globalAlpha = Math.max(0, Math.min(1, a));
-        cx.font = (p.big ? 'italic 800 30px' : 'bold 14px') + ' system-ui, sans-serif'; cx.lineWidth = p.big ? 6 : 4;
-        cx.strokeText(p.txt, p.x, yy);
-        cx.fillStyle = p.big ? FX_GOLD : '#fff';
-        cx.fillText(p.txt, p.x, yy);
+        if (p.big) {
+            cx.font = 'italic 800 30px system-ui, sans-serif'; cx.lineWidth = 6;
+            cx.strokeText(p.txt, p.x, p.y - p.t * 26);
+            cx.fillStyle = FX_GOLD;
+            cx.fillText(p.txt, p.x, p.y - p.t * 26);
+            continue;
+        }
+        cx.font = 'bold 14px system-ui, sans-serif'; cx.lineWidth = 4;
+        cx.strokeText(p.txt, mid, yy);
+        cx.fillStyle = '#fff';
+        cx.fillText(p.txt, mid, yy);
     }
     cx.restore();
 }

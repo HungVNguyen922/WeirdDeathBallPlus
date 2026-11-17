@@ -26,11 +26,11 @@ const CAMPAIGN_STAGES = [
     // time: the stage clock in seconds (none = no limit): when it runs out the player wins only by being AHEAD (a tie is a loss, and a timeout win is worth less).
     // speedAt: with 'dashCut', the player reaching this many points takes every cooldown off her dashes.   drive: how much the AI likes flat, fast shots at the top half of the goal (see plunge).   sweep: the same for shots that skim the floor into the bottom half.
     // combo: a combined AI plan for her two specials ('decoyArrow', 'transmit' = stage 4's instant transmission, 'sweep' = stage 6's volleying).
-    { name: 'Stage 1', boss: 'Boss 1', goal: 5, time: 60, gap: 1 * PL, special: 'dash', plunge: 120, lvl: 0.4, skin: CAMPAIGN_SKINS[0] },
-    { name: 'Stage 2', boss: 'Boss 2', goal: 5, time: 90, gap: 1 * PL, special: 'plinko', plinkoBoost: true, lvl: 0.55, skin: CAMPAIGN_SKINS[1] },
+    { name: 'Stage 1', boss: 'Boss 1', goal: 5, time: 60, gap: 6 * PL, special: 'dash', plunge: 120, lvl: 0.5, skin: CAMPAIGN_SKINS[0] },
+    { name: 'Stage 2', boss: 'Boss 2', goal: 5, time: 90, gap: 6 * PL, special: 'plinko', plinkoBoost: true, lvl: 0.6, skin: CAMPAIGN_SKINS[1] },
     { name: 'Stage 3', boss: 'Boss 3', goal: 7, time: 120, gap: 4 * PL, special: 'dash', dashes: 2, gimmick: 'dashCut', speedAt: 5, plunge: 120, lvl: 0.7, skin: CAMPAIGN_SKINS[2] },
     { name: 'Stage 4', boss: 'Boss 4', goal: 7, time: 180, gap: 4 * PL, special: 'explode', special2: 'warp', combo: 'transmit', explodeCd: 3, drive: 100, lvl: 0.8, skin: CAMPAIGN_SKINS[3] },
-    { name: 'Stage 5', boss: 'Boss 5', goal: 7, time: 210, gap: 4 * PL, special: 'decoy', special2: 'arrow', arrows: 3, arrowSend: 700, combo: 'decoyArrow', drive: 100, lvl: 0.9, skin: CAMPAIGN_SKINS[4] },
+    { name: 'Stage 5', boss: 'Boss 5', goal: 7, time: 210, gap: 4 * PL, special: 'decoy', special2: 'arrow', arrows: 5, arrowSend: 700, combo: 'decoyArrow', drive: 100, lvl: 0.9, skin: CAMPAIGN_SKINS[4] },
     { name: 'Stage 6', boss: 'Boss 6', goal: 9, gap: 4 * PL, special: 'marionette', special2: 'bat', combo: 'sweep', sweep: 100, lvl: 1, skin: CAMPAIGN_SKINS[5], swarm: { first: 6, every: 9, max: 4, life: 30 } },
 ];
 const CAMPAIGN_DASH_CUT = 1;           // seconds every point (either way) takes off one of a 'dashCut' boss' two dash cooldowns
@@ -104,7 +104,7 @@ function campaignStart() {
         layoutTeams(1);
         teamSize = 1;
     }
-    Object.assign(campaign, { on: true, stage: 0, continues: 0, won: null, clear: false, pts: 0, pops: [], clock: 0, newHi: false });
+    Object.assign(campaign, { on: true, stage: 0, continues: 0, won: null, clear: false, pts: 0, pops: [], clock: 0, newHi: false, pass: false, held: false });
     campaignApply();
     resetMatch();
     campaignBegin();
@@ -202,7 +202,7 @@ function campaignOnPoint(t, why) {
     }
 }
 // ---- the score: ----
-const CAMPAIGN_POINTS = { graze: 100, kill: 300, goal: 500, timeout: 100, win: 300, perfect: 500 };
+const CAMPAIGN_POINTS = { graze: 300, pass: 100, kill: 300, goal: 500, timeout: 100, win: 300, perfect: 500 };
 const CAMPAIGN_GRAZE_PAD = 26;         // u beyond touching that still counts as a graze
 const CAMPAIGN_GRAZE_GAP = 1.5;        // s before the same object can be grazed again
 const campaignFmt = n => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
@@ -212,16 +212,24 @@ function campaignPop(txt, x, y, big = false) {
 function campaignAward(n, label) {
     const me = allPlayers[0];
     campaign.pts += n;
-    campaignPop('+' + n + ' ' + label, me.x, me.y - 30);
+    campaignPop('+' + n + ' ' + label, me.x, me.y - 30); // (drawn as a list above the score plaque: several at once stack, they do not overlap)
 }
 // Anything that can kill you passing close without touching you: the death ball, the boss' decoys, her arrows. Each object pays once per CAMPAIGN_GRAZE_GAP.
 function campaignGrazeTick() {
-    const me = allPlayers[0], T = campaign.clock;
+    const me = allPlayers[0], boss = allPlayers[1], T = campaign.clock;
+    // A PASS: the death ball was last touched by the boss, it has been in the air since (no floor, wall or ceiling), and you grapple it
+    const held = me.tball === ball, was = campaign.held;
+    campaign.held = held;
+    if (held && !was && campaign.pass && me.alive)
+        campaignAward(CAMPAIGN_POINTS.pass, 'PASS');
+    const flying = ball.lastGrab === boss.id && boss.tball !== ball && !held && ball.x > ball.r + 3 && ball.x < W - ball.r - 3 && ball.y > ball.r + 3 && ball.y + ball.r < aiFloorY(ball.x) - 2;
+    campaign.pass = flying && (campaign.pass || Math.hypot(ball.vx, ball.vy) > 60 || ball.y + ball.r < aiFloorY(ball.x) - 40);
     if (!me.alive || me.invT > 0)
         return;
+    // A GRAZE: anything of hers that can kill you passing close without touching you: a ball she touched last, her decoys, her arrows. Each object pays once per CAMPAIGN_GRAZE_GAP.
     const near = (b, rr) => { const d = Math.hypot(b.x - me.x, b.y - me.y), lim = me.r + rr; return d > lim && d < lim + CAMPAIGN_GRAZE_PAD; };
     for (const b of [ball, ...decoys])
-        if (b !== me.tball && (b === ball || b.team !== me.team) && Math.hypot(b.vx, b.vy) >= 250 && near(b, b.r) && !(b.gz > T - CAMPAIGN_GRAZE_GAP)) {
+        if (b !== me.tball && (b === ball ? ball.lastGrab === boss.id : b.team !== me.team) && Math.hypot(b.vx, b.vy) >= 250 && near(b, b.r) && !(b.gz > T - CAMPAIGN_GRAZE_GAP)) {
             b.gz = T;
             campaignAward(CAMPAIGN_POINTS.graze, 'GRAZE');
         }
@@ -244,7 +252,7 @@ function campaignClockTick() {
     campaignGrazeTick();
     for (const p of campaign.pops)
         p.t += DT;
-    campaign.pops = campaign.pops.filter(p => p.t < 1.4);
+    campaign.pops = campaign.pops.filter(p => p.t < 2.2);
 }
 function campaignTimeUp() { // the clock ran out: whoever is AHEAD wins (a tie goes to the boss)
     campaign.timeT = 0;
@@ -273,6 +281,8 @@ function campaignSpawnBall() {
     ball.vx = 0; // straight down the net line: nothing is carried over from the last ball
     ball.vy = 0;
     ball.w = 0;
+    ball.lastGrab = -1; // nobody has touched the new ball
+    campaign.pass = false;
 }
 // ---- SKIN, MAP, SWARM (per-stage looks and gimmicks) ----
 const campaignSkin = () => { const s = campaignStage(); return s._skin || (s._skin = typeof skinClean === 'function' ? skinClean(s.skin) : (s.skin || [])); }; // (cleaned once: the sprite cache keys on the array)

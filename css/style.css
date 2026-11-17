@@ -136,3 +136,36 @@ body.touch #touchui{display:block}
 #p2p input, #p2p textarea { box-sizing: border-box; padding: 6px 8px; border-radius: 8px; border: 1px solid #4a4466; background: #17132a; color: #fff; font: inherit; }
 #p2p textarea { width: 100%; min-height: 64px; font: 12px ui-monospace, monospace; word-break: break-all; }
 #p2p .code { font: 700 28px ui-monospace, monospace; letter-spacing: .15em; margin: 6px 0; user-select: text; -webkit-user-select: text; }
+
+/* ---- menu, campaign look: dark violet, an italic title, a card for every control, a lit card (and a little arrow) for the selected one ---- */
+.overlay{background:rgba(5,2,12,.78)}
+.dialog{--bg:#1a0e30;--fg:#e9e4f6;--mut:#98a2ad;--line:rgba(155,120,220,.22);--card:#1a0e30;--card-line:#4b2f7a;--card-sel:#2a1850;--pick:#42a5f5;
+  max-width:700px;border:0;border-radius:16px;padding:14px 22px 20px;background:
+  linear-gradient(90deg,rgba(66,165,245,.2),rgba(66,165,245,0) 24%,rgba(239,83,80,0) 76%,rgba(239,83,80,.2)),rgba(9,5,18,.97);box-shadow:0 0 0 2px #4b2f7a,0 20px 60px rgba(0,0,0,.6)}
+.dhead{flex-wrap:wrap;position:relative;margin-bottom:14px}
+#mtitle{flex:1 0 100%;text-align:center;margin:2px 0 8px;font:italic 800 34px/1.1 system-ui,sans-serif;color:#fff;letter-spacing:.01em;text-shadow:-2px -2px 0 #000,2px -2px 0 #000,-2px 2px 0 #000,2px 2px 0 #000,0 3px 0 #000}
+#mtitle small{display:block;font:700 12px/1.6 system-ui,sans-serif;letter-spacing:.06em;color:var(--mut);text-shadow:none;font-style:normal;text-transform:uppercase}
+.tabs{flex:1;flex-wrap:wrap;justify-content:center;gap:8px}
+.dialog .x{position:absolute;top:0;right:0;border:2px solid var(--card-line);background:var(--card);border-radius:10px;color:var(--fg)}
+.dialog button{background:var(--card);border:2px solid var(--card-line);border-radius:12px;color:#d8d2e8;font-weight:700;padding:6px 16px;transition:background .12s,border-color .12s,transform .12s}
+.dialog .tab{border-radius:12px;color:#b9b2cc;font-size:13px;letter-spacing:.06em;text-transform:uppercase;padding:6px 16px}
+.dialog .tab.on{color:#fff;background:var(--card-sel);border-color:#9a63f0}
+.dialog button:hover:not(:disabled),.dialog button:focus-visible{background:var(--card-sel);border-color:var(--pick);color:#fff;outline:0;box-shadow:0 0 0 2px rgba(66,165,245,.28);transform:scale(1.015)}
+.dialog button:focus-visible:not(.tab):not(.x):not(.keycell):not(.layer)::after{content:'\25B6';margin-left:10px;color:var(--pick);font-size:.85em}
+.dialog section button.mode,.dialog section button.blue,.dialog section button.red{border-color:var(--card-line)}
+.dialog section button.mode.on{background:#3b2170;border-color:#c9b8f0;color:#fff}
+.dialog section button.blue{border-color:#2b6aa3}.dialog section button.red{border-color:#a3403e}
+.dialog section button.blue.on{background:#2a74b8;border-color:#42a5f5}.dialog section button.red.on{background:#b8403d;border-color:#ef5350}
+.dialog section button.blue:hover:not(:disabled),.dialog section button.blue:focus-visible{border-color:#42a5f5}
+.dialog section button.red:hover:not(:disabled),.dialog section button.red:focus-visible{border-color:#ef5350;box-shadow:0 0 0 2px rgba(239,83,80,.3)}
+.dialog button.keycell{border-radius:8px;padding:1px 8px;border-bottom-width:3px;color:#e9e4f6}
+.dialog button.keycell.capturing{background:#2e1a52;border-color:#c9b8f0}
+.group{background:rgba(26,14,48,.55);border:2px solid rgba(75,47,122,.55);border-radius:14px;padding:10px 14px 12px}
+.group .group{background:transparent;border:0;padding:0;margin:10px 0 0}
+h3{color:#b9a8e6;font-weight:800;letter-spacing:.1em}
+.hint{color:#8d97a3}
+kbd{border-radius:7px;background:#1a0e30;border-color:#4b2f7a}
+.dialog table th,.dialog table td{border-bottom-color:var(--line)}
+.dialog ::-webkit-scrollbar{width:10px;height:10px}.dialog ::-webkit-scrollbar-thumb{background:#4b2f7a;border-radius:6px}
+#mhelp{margin:14px 0 0;text-align:center;font:700 11px system-ui,sans-serif;letter-spacing:.06em;color:#98a2ad;text-transform:uppercase}
+body.touch #mhelp{display:none}

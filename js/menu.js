@@ -89,7 +89,62 @@ const gameMenu = (() => {
         }
         for (const p of panels)
             p.hidden = p.dataset.panel !== name;
+        const ttl = document.getElementById('mtitle');
+        if (ttl)
+            ttl.textContent = ({ game: 'MENU', controls: 'CONTROLS', players: 'PLAYERS', moves: 'MOVES', skin: 'SKIN', account: 'ACCOUNT' })[name] || 'MENU';
     }
+    // ---- keyboard / game-key navigation, like the campaign screens: arrows (or W A S D) move a highlight between the cards, Enter / Space / your Grapple key presses it, Esc closes ----
+    const navDir = { ArrowUp: 'u', ArrowDown: 'd', ArrowLeft: 'l', ArrowRight: 'r', w: 'u', s: 'd', a: 'l', d: 'r' };
+    const navList = () => [...menu.querySelectorAll('.dhead button, section:not([hidden]) :is(button, summary)')].filter(b => !b.disabled && b.getClientRects().length && !b.closest('[hidden]'));
+    function navMove(cur, dir) {
+        const list = navList();
+        if (!cur || !list.includes(cur)) {
+            const t = tabs.find(x => x.classList.contains('on')) || list[0];
+            return t && t.focus();
+        }
+        const r = cur.getBoundingClientRect(), cx0 = r.left + r.width / 2, cy0 = r.top + r.height / 2;
+        let best = null, bs = Infinity;
+        for (const b of list) {
+            if (b === cur)
+                continue;
+            const q = b.getBoundingClientRect(), dx = q.left + q.width / 2 - cx0, dy = q.top + q.height / 2 - cy0, sameRow = Math.abs(dy) < Math.min(r.height, q.height) * 0.6;
+            let sc;
+            if (dir === 'l' || dir === 'r') {
+                if (!sameRow || dx * (dir === 'r' ? 1 : -1) <= 1)
+                    continue;
+                sc = Math.abs(dx);
+            } else {
+                if (sameRow || dy * (dir === 'd' ? 1 : -1) <= 0)
+                    continue;
+                sc = Math.abs(dy) * 4 + Math.abs(dx);
+            }
+            if (sc < bs) { bs = sc; best = b; }
+        }
+        if (!best)
+            return;
+        best.focus();
+        if (best.classList.contains('tab'))
+            best.click(); // moving along the tab row switches the tab
+    }
+    window.addEventListener('keydown', e => {
+        if (menu.hidden || capturing || e.ctrlKey || e.metaKey || e.altKey)
+            return;
+        const t = e.target;
+        if (t && /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName))
+            return; // typing, sliders and drop-downs keep their own keys (Tab / Esc still leave them)
+        const key = e.key.length === 1 ? e.key.toLowerCase() : e.key, dir = navDir[key];
+        const grapple = typeof keybinds !== 'undefined' && keybinds.map[0] && keyToken(e) === keybinds.map[0].z;
+        if (dir) {
+            e.preventDefault();
+            e.stopPropagation(); // (the game must not move your player behind the panel)
+            if (!e.repeat || dir === 'u' || dir === 'd')
+                navMove(document.activeElement && menu.contains(document.activeElement) ? document.activeElement : null, dir);
+        } else if (grapple && !e.repeat && document.activeElement && menu.contains(document.activeElement) && document.activeElement.tagName === 'BUTTON') {
+            e.preventDefault();
+            e.stopPropagation();
+            document.activeElement.click();
+        }
+    }, true);
     // "Specials" toggle: free swapping any time, or only on the pick screens (before the first point and after every 5th point). Online the server owns it (net.setFixed) and only the
     // host may change it; the label follows the game state, so it catches up a moment after the click.
     function labelPick() {
@@ -432,6 +487,9 @@ const gameMenu = (() => {
         renderPicker();
         renderRoster();
         menu.hidden = false;
+        const on = tabs.find(x => x.classList.contains('on'));
+        if (on)
+            on.focus({ preventScroll: true }); // the highlight starts on the open tab
     }
     function close() {
         stopCapture();

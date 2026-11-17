@@ -56,6 +56,8 @@ mixin(Player, {
             else {
                 q.vx += ux * kick;
                 q.vy += uy * kick;
+                if (q === ball)
+                    ball.lastGrab = this.id; // (a blast counts as a touch: campaign grazes and passes)
             }
             if (q.boost !== undefined) { // a ball already flying fast: lift its speed cap for a moment (like a crash shot or a hatchet hit) so the push is not clipped
                 const s = Math.hypot(q.vx, q.vy);
