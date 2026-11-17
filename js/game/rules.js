@@ -201,7 +201,7 @@ function point(t, why) {
     events.onPoint(t, why);
     over = score[t] >= goalOf(t);
     if (campaignOn()) {
-        campaignOnPoint(t);
+        campaignOnPoint(t, why);
         if (!over)
             return campaignRespawn(); // the stage goes on: no pause, no new round
     }
@@ -376,6 +376,7 @@ function update() {
     if (campaignOn()) {
         campaignSwarmTick();
         campaignInvTick();
+        campaignClockTick();
     }
     for (let i = 0; i < decoys.length; i++) { // decoys are solid: they bump into players, the death ball and each other (the death ball itself still just kills)
         const d = decoys[i];

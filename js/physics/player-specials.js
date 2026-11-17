@@ -23,7 +23,7 @@ mixin(Player, {
     explode() {
         const hits = []; // every body the blast pushes: where it was, which way it was sent and how hard (0..1), so the drawing can flash and streak exactly those
         this.explodeFx = { t: EXPLODE_FX, x: this.x, y: this.y, hits };
-        this.cd.explode = EXPLODE_COOLDOWN;
+        this.cd.explode = this.explodeCd || EXPLODE_COOLDOWN; // (a campaign boss can have a shorter one)
         this.exploT = EXPLODE_WINDOW;
         this.exploDead = players.filter(q => !q.alive).length;
         if (this.sim)

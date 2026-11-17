@@ -124,6 +124,27 @@ function drawCampaignHome() {
     cx.fillText('UP / DOWN: MOVE     GRAPPLE: SELECT     WEIGHT: ' + (h.view === 'list' ? 'BACK TO BASE GAME' : 'BACK'), W / 2, H - 22);
     cx.restore();
 }
+// The stage clock and the run's score under the plaque, and the floating "+100 GRAZE" texts.
+function drawCampaignHud() {
+    const mid = W / 2, y = HUD_TOP + 50 + 16, t = campaign.timeT;
+    cx.save();
+    cx.textAlign = 'center'; cx.lineJoin = 'round';
+    cx.font = 'bold 13px system-ui, sans-serif'; cx.lineWidth = 4; cx.strokeStyle = '#000';
+    const left = t === null ? '' : Math.floor(Math.ceil(t) / 60) + ':' + String(Math.ceil(t) % 60).padStart(2, '0');
+    const txt = (left ? left + '    ' : '') + 'SCORE ' + campaignFmt(campaign.pts);
+    cx.strokeText(txt, mid, y);
+    cx.fillStyle = t !== null && t < 10 && Math.floor(performance.now() / 250) % 2 ? '#ff5252' : '#e8e8e4';
+    cx.fillText(txt, mid, y);
+    for (const p of campaign.pops) {
+        const a = 1 - Math.max(0, p.t - 0.9) / 0.5, yy = p.y - p.t * 26;
+        cx.globalAlpha = Math.max(0, Math.min(1, a));
+        cx.font = (p.big ? 'italic 800 30px' : 'bold 14px') + ' system-ui, sans-serif'; cx.lineWidth = p.big ? 6 : 4;
+        cx.strokeText(p.txt, p.x, yy);
+        cx.fillStyle = p.big ? FX_GOLD : '#fff';
+        cx.fillText(p.txt, p.x, yy);
+    }
+    cx.restore();
+}
 function drawCampaignFx() { // after the arena, over the playing area (render.js)
     if (campaignHome.on) {
         drawCampaignHome();
@@ -131,6 +152,7 @@ function drawCampaignFx() { // after the arena, over the playing area (render.js
     }
     if (!campaign.on)
         return;
+    drawCampaignHud();
     if (campaign.draft.on)
         drawDraft();
     else if (campaign.bannerT > 0)

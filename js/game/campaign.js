@@ -23,12 +23,15 @@ const CAMPAIGN_STAGES = [
     // special: the boss' ability (any id the AI knows, AI_SPECIAL_POOL). special2: a second one on the boss' second key (the AI uses dash from either key). dashes: 2 = a second, separate dash.
     // gimmick: 'dashCut' = every point (either way) shaves 1 s (CAMPAIGN_DASH_CUT) off one of her two dash cooldowns, picked at random.   plunge: how much the AI likes shots that come down steeply (0 = no preference).
     // lvl: how sharp the boss is (0..1; a lower level reacts later, see aiLag in ai.js).
-    { name: 'Stage 1', boss: 'Boss 1', goal: 5, gap: 2 * PL, special: 'dash', lvl: 0.4, skin: CAMPAIGN_SKINS[0] },
-    { name: 'Stage 2', boss: 'Boss 2', goal: 5, gap: 2 * PL, special: 'plinko', lvl: 0.6, skin: CAMPAIGN_SKINS[1] },
-    { name: 'Stage 3', boss: 'Boss 3', goal: 7, gap: 2 * PL, special: 'dash', dashes: 2, gimmick: 'dashCut', plunge: 120, lvl: 0.7, skin: CAMPAIGN_SKINS[2] },
-    { name: 'Stage 4', boss: 'Boss 4', goal: 7, gap: 4 * PL, special: 'explode', special2: 'bat', lvl: 0.8, skin: CAMPAIGN_SKINS[3] },
-    { name: 'Stage 5', boss: 'Boss 5', goal: 7, gap: 4 * PL, special: 'decoy', special2: 'arrow', arrows: 3, arrowSend: 700, combo: 'decoyArrow', lvl: 0.9, skin: CAMPAIGN_SKINS[4] },
-    { name: 'Stage 6', boss: 'Boss 6', goal: 9, gap: 4 * PL, special: 'marionette', special2: 'explode', lvl: 1, skin: CAMPAIGN_SKINS[5], swarm: { first: 6, every: 9, max: 4, life: 30 } },
+    // time: the stage clock in seconds (none = no limit): when it runs out the player wins only by being AHEAD (a tie is a loss, and a timeout win is worth less).
+    // speedAt: with 'dashCut', the player reaching this many points takes every cooldown off her dashes.   drive: how much the AI likes flat, fast shots at the top half of the goal (see plunge).   sweep: the same for shots that skim the floor into the bottom half.
+    // combo: a combined AI plan for her two specials ('decoyArrow', 'transmit' = stage 4's instant transmission, 'sweep' = stage 6's volleying).
+    { name: 'Stage 1', boss: 'Boss 1', goal: 5, time: 60, gap: 1 * PL, special: 'dash', plunge: 120, lvl: 0.4, skin: CAMPAIGN_SKINS[0] },
+    { name: 'Stage 2', boss: 'Boss 2', goal: 5, time: 90, gap: 1 * PL, special: 'plinko', plinkoBoost: true, lvl: 0.55, skin: CAMPAIGN_SKINS[1] },
+    { name: 'Stage 3', boss: 'Boss 3', goal: 7, time: 120, gap: 4 * PL, special: 'dash', dashes: 2, gimmick: 'dashCut', speedAt: 5, plunge: 120, lvl: 0.7, skin: CAMPAIGN_SKINS[2] },
+    { name: 'Stage 4', boss: 'Boss 4', goal: 7, time: 180, gap: 4 * PL, special: 'explode', special2: 'warp', combo: 'transmit', explodeCd: 3, drive: 100, lvl: 0.8, skin: CAMPAIGN_SKINS[3] },
+    { name: 'Stage 5', boss: 'Boss 5', goal: 7, time: 210, gap: 4 * PL, special: 'decoy', special2: 'arrow', arrows: 3, arrowSend: 700, combo: 'decoyArrow', drive: 100, lvl: 0.9, skin: CAMPAIGN_SKINS[4] },
+    { name: 'Stage 6', boss: 'Boss 6', goal: 9, gap: 4 * PL, special: 'marionette', special2: 'bat', combo: 'sweep', sweep: 100, lvl: 1, skin: CAMPAIGN_SKINS[5], swarm: { first: 6, every: 9, max: 4, life: 30 } },
 ];
 const CAMPAIGN_DASH_CUT = 1;           // seconds every point (either way) takes off one of a 'dashCut' boss' two dash cooldowns
 const CAMPAIGN_INV_T = 1;              // seconds of invincibility for a player who respawns after a point (so a carried-over decoy cannot spawn-camp)
@@ -40,7 +43,7 @@ const CAMPAIGN_LIST = [
     { id: 'bosses', name: 'THE SIX BOSSES', blurb: 'Six fights, one long run. Lose a stage and it starts over.', stages: CAMPAIGN_STAGES },
 ];
 const campaignStages = () => (campaign.def || CAMPAIGN_LIST[0]).stages;
-const campaign = { on: false, def: null, practice: null, stage: 0, continues: 0, won: null, clear: false, saved: null, bannerT: 0, draft: { on: false, slot: 0, offer: [], cur: 1, t: 0, lock: 0, chosen: -1, prev: 0 } }; // won = who took the stage that just ended (0 = you, 1 = the boss); clear = the last stage was just beaten
+const campaign = { on: false, def: null, practice: null, pts: 0, pops: [], clock: 0, timeT: null, newHi: false, stage: 0, continues: 0, won: null, clear: false, saved: null, bannerT: 0, draft: { on: false, slot: 0, offer: [], cur: 1, t: 0, lock: 0, chosen: -1, prev: 0 } }; // won = who took the stage that just ended (0 = you, 1 = the boss); clear = the last stage was just beaten
 const campaignStage = () => campaignStages()[Math.min(campaign.stage, campaignStages().length - 1)];
 const campaignGoal = () => campaignStage().goal;
 const campaignLose = () => campaignStage().lose || campaignStage().goal;
@@ -49,7 +52,12 @@ function campaignBossReset() { // the boss' extra mechanics back to the normal g
     b.dual = false;
     b.dashN = 1;
     b.dashCut = [0, 0];
+    b.dashMin = 0.5;
+    b.explodeCd = 0;
     ai[1].lvl = 1;
+    ai[1].drive = 0;
+    ai[1].sweep = 0;
+    ai[1].plinkoBoost = false;
     ai[1].plunge = 0;
     campaignSwarmClear();
     campaignMapSet(null);
@@ -70,6 +78,9 @@ function campaignApply() {
     b.dual = !!s.special2;
     b.dashN = s.dashes || 1;
     b.dashCut = [0, 0];
+    b.dashMin = 0.5;                     // (stage 3: Speed of Light sets this to 0)
+    b.explodeCd = s.explodeCd || 0;      // stage 4: her blast comes back much sooner, so she can chain them
+    campaign.timeT = s.time || null;     // the stage clock
     setNetGap(s.gap);
     campaignSwarmClear();
     campaign.swarmT = s.swarm ? s.swarm.first : 0;
@@ -77,6 +88,9 @@ function campaignApply() {
     b.arrowN = s.arrows || 1;            // arrows per shot (a spread)
     b.arrowSend = s.arrowSend || 0;      // an arrow that hits any ball sends it at the other player at this speed (u/s)
     ai[1].combo = s.combo || null;       // a combined AI plan for her two specials (see aiSpDecoyArrow)
+    ai[1].drive = s.drive || 0;          // how much the AI likes flat, fast shots at the top half of the goal
+    ai[1].plinkoBoost = !!s.plinkoBoost;  // stage 2: her second peg goes up by the net, where her shots can bounce off it
+    ai[1].sweep = s.sweep || 0;          // how much it likes shots that skim the floor into the bottom half of the goal
 }
 function campaignStart() {
     if (campaign.on)
@@ -90,7 +104,7 @@ function campaignStart() {
         layoutTeams(1);
         teamSize = 1;
     }
-    Object.assign(campaign, { on: true, stage: 0, continues: 0, won: null, clear: false });
+    Object.assign(campaign, { on: true, stage: 0, continues: 0, won: null, clear: false, pts: 0, pops: [], clock: 0, newHi: false });
     campaignApply();
     resetMatch();
     campaignBegin();
@@ -129,8 +143,13 @@ function campaignStop(restore = true) {
 }
 const campaignAbort = () => campaignStop(false); // a setter in rules.js that changes the match type (2v2, Flex, roster, ...) calls this first
 // The text after the score message when a stage ends (rules.js point()).
-function campaignOverText(t) {
+function campaignOverText(t, kind = 'win') {
     campaign.won = t;
+    if (t === 0) { // the stage bonuses
+        campaignAward(kind === 'time' ? CAMPAIGN_POINTS.timeout : CAMPAIGN_POINTS.win, kind === 'time' ? 'TIME BONUS' : 'STAGE CLEAR');
+        if (score[1] === 0)
+            campaignAward(CAMPAIGN_POINTS.perfect, 'PERFECT');
+    }
     campaign.clear = t === 0 && campaign.practice == null && campaign.stage >= campaignStages().length - 1;
     if (campaign.practice != null)
         return t === 0 ? ' - stage clear!' : ' - you lose! try it again';
@@ -155,6 +174,8 @@ function campaignAfterOver() {
         }
         campaign.stage++;
     } else {
+        campaignRecordHi();
+        campaign.pts = 0;
         campaign.stage = 0;                    // one long run: a lost stage means starting over
         campaign.continues++;
         campaignLoadoutReset();                // ... and the loadout is drafted again
@@ -163,12 +184,86 @@ function campaignAfterOver() {
     campaignBegin();
 }
 // ---- every point (either way), called from rules.js point() before the next round starts ----
-function campaignOnPoint(t) {
-    const s = campaignStage(), b = allPlayers[1];
-    if (s.gimmick === 'dashCut') { // one of her two dashes, at random, comes back 1 s sooner for good (and the one that is cooling down right now is helped too)
+function campaignOnPoint(t, why) {
+    const s = campaignStage(), b = allPlayers[1], me = allPlayers[0];
+    if (t === me.team)
+        campaignAward(why === 'scores!' ? CAMPAIGN_POINTS.goal : CAMPAIGN_POINTS.kill, why === 'scores!' ? 'GOAL' : 'KILL');
+    if (s.gimmick === 'dashCut' && b.dashMin !== 0) { // one of her two dashes, at random, comes back 1 s sooner for good (and the one that is cooling down right now is helped too)
         const i = Math.random() < 0.5 ? 0 : 1, id = i ? 'dash2' : 'dash';
         b.dashCut[i] = Math.min(b.dashCut[i] + CAMPAIGN_DASH_CUT, DASH_COOLDOWN - 0.5); // (never below 0.5 s)
         b.cd[id] = Math.max(0, b.cd[id] - CAMPAIGN_DASH_CUT);
+    }
+    if (s.speedAt && score[me.team] >= s.speedAt && b.dashMin !== 0) { // SPEED OF LIGHT: both dashes have no cooldown any more
+        b.dashMin = 0;
+        b.dashCut = [DASH_COOLDOWN, DASH_COOLDOWN];
+        b.cd.dash = 0;
+        b.cd.dash2 = 0;
+        campaignPop('SPEED OF LIGHT', W / 2, 150, true);
+    }
+}
+// ---- the score: ----
+const CAMPAIGN_POINTS = { graze: 100, kill: 300, goal: 500, timeout: 100, win: 300, perfect: 500 };
+const CAMPAIGN_GRAZE_PAD = 26;         // u beyond touching that still counts as a graze
+const CAMPAIGN_GRAZE_GAP = 1.5;        // s before the same object can be grazed again
+const campaignFmt = n => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+function campaignPop(txt, x, y, big = false) {
+    campaign.pops.push({ txt, x, y, t: 0, big });
+}
+function campaignAward(n, label) {
+    const me = allPlayers[0];
+    campaign.pts += n;
+    campaignPop('+' + n + ' ' + label, me.x, me.y - 30);
+}
+// Anything that can kill you passing close without touching you: the death ball, the boss' decoys, her arrows. Each object pays once per CAMPAIGN_GRAZE_GAP.
+function campaignGrazeTick() {
+    const me = allPlayers[0], T = campaign.clock;
+    if (!me.alive || me.invT > 0)
+        return;
+    const near = (b, rr) => { const d = Math.hypot(b.x - me.x, b.y - me.y), lim = me.r + rr; return d > lim && d < lim + CAMPAIGN_GRAZE_PAD; };
+    for (const b of [ball, ...decoys])
+        if (b !== me.tball && (b === ball || b.team !== me.team) && Math.hypot(b.vx, b.vy) >= 250 && near(b, b.r) && !(b.gz > T - CAMPAIGN_GRAZE_GAP)) {
+            b.gz = T;
+            campaignAward(CAMPAIGN_POINTS.graze, 'GRAZE');
+        }
+    for (const a of projectiles)
+        if (a.type === 'arrow' && !a.stuck && a.team !== me.team && near(a, ARROW_R) && !(a.gz > T - CAMPAIGN_GRAZE_GAP)) {
+            a.gz = T;
+            campaignAward(CAMPAIGN_POINTS.graze, 'GRAZE');
+        }
+}
+// Every live tick of a campaign stage: the clock, grazes, the floating score texts.
+function campaignClockTick() {
+    campaign.clock += DT;
+    if (over)
+        return;
+    if (campaign.timeT !== null) {
+        campaign.timeT -= DT;
+        if (campaign.timeT <= 0)
+            campaignTimeUp();
+    }
+    campaignGrazeTick();
+    for (const p of campaign.pops)
+        p.t += DT;
+    campaign.pops = campaign.pops.filter(p => p.t < 1.4);
+}
+function campaignTimeUp() { // the clock ran out: whoever is AHEAD wins (a tie goes to the boss)
+    campaign.timeT = 0;
+    const t = score[0] > score[1] ? 0 : 1;
+    over = true;
+    msg = (t === 0 ? 'Blue' : 'Red') + ' - time is up!' + campaignOverText(t, 'time');
+    pause = WIN_PAUSE;
+}
+// ---- the high score (one per campaign, in the browser) ----
+const CAMPAIGN_HI_KEY = 'wdb-campaign-hi';
+function campaignHi(id) { try { return (JSON.parse(localStorage.getItem(CAMPAIGN_HI_KEY)) || {})[id] | 0; } catch (e) { return 0; } }
+function campaignRecordHi() { // a full run's score (never practice), when the run ends: cleared, or lost and starting over
+    campaign.newHi = false;
+    if (campaign.practice != null || campaign.pts <= 0)
+        return;
+    const id = (campaign.def || CAMPAIGN_LIST[0]).id;
+    if (campaign.pts > campaignHi(id)) {
+        campaign.newHi = true;
+        try { const o = JSON.parse(localStorage.getItem(CAMPAIGN_HI_KEY)) || {}; o[id] = campaign.pts; localStorage.setItem(CAMPAIGN_HI_KEY, JSON.stringify(o)); } catch (e) {}
     }
 }
 // Where the ball appears: the top of the net, falling straight down the net line.
@@ -258,7 +353,7 @@ function campaignHomeRows() {
     const h = campaignHome, rows = [];
     if (h.view === 'list') {
         for (const def of CAMPAIGN_LIST)
-            rows.push({ label: def.name, sub: def.stages.length + ' STAGES  ·  ' + (campaignClears(def.id) ? 'CLEARED ' + campaignClears(def.id) + 'x' : 'NOT CLEARED YET') + '  ·  ' + def.blurb, go() { h.def = def; h.view = 'mode'; h.cur = 0; } });
+            rows.push({ label: def.name, sub: def.stages.length + ' STAGES  ·  ' + (campaignClears(def.id) ? 'CLEARED ' + campaignClears(def.id) + 'x' : 'NOT CLEARED YET') + '  ·  HIGH SCORE ' + campaignFmt(campaignHi(def.id)), go() { h.def = def; h.view = 'mode'; h.cur = 0; } });
         rows.push({ label: 'BACK TO BASE GAME', sub: '', go() { campaignHomeClose(); } });
     } else if (h.view === 'mode') {
         rows.push({ label: 'PLAY THE FULL RUN', sub: 'Stage 1 to ' + h.def.stages.length + ', picking your two specials on the way', go() { campaignRun(h.def, null); } });
@@ -300,11 +395,14 @@ function campaignRun(def, practice) {
 // The run is over (cleared, or the practice stage was): back to the base game's settings, then straight on to the campaign screen.
 function campaignFinish(note) {
     const id = (campaign.def || CAMPAIGN_LIST[0]).id, full = campaign.practice == null;
+    if (full)
+        campaignRecordHi();
+    const text = full ? note + '  ·  SCORE ' + campaignFmt(campaign.pts) + (campaign.newHi ? '  ·  NEW HIGH SCORE!' : '') : note;
     campaignStop(true);
     if (full)
         campaignAddClear(id);
     campaign.practice = null;
-    campaignHomeOpen(note);
+    campaignHomeOpen(text);
 }
 // Practising stage N: the loadout drafts of the stages before it (and its own) happen first, one after another. Returns true when it moved on (to the next draft, or to the stage itself).
 function campaignPracticeNext() {

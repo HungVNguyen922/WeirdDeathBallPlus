@@ -260,6 +260,19 @@ function aiPickFocus(me, A) {
     if ((A.job || A.E || A.X) && A.fb && (A.fb === ball || decoys.includes(A.fb)))
         return A.fb;                       // a look-ahead / jump in progress was planned for this body: keep it
     let best = ball;
+    if (A.combo === 'decoyArrow') { // the stage 5 boss plays her decoy as a second ball: grapple it (or the death ball, whichever is nearer, the decoy slightly preferred) and swing it at them
+        const goal = aiLeft(me.team) ? -1 : 1, mine = decoys.find(d => d.owner === me && !d.swarm);
+        let bt = Infinity, threat = null;
+        for (const b of mine ? [ball, mine] : [ball]) {
+            const f = aiForecast(b);
+            if (f.end === goal && f.path.length < bt) { bt = f.path.length; threat = b; }
+        }
+        if (threat)
+            return threat;
+        if (mine && Math.hypot(mine.x - me.x, mine.y - me.y) < Math.hypot(ball.x - me.x, ball.y - me.y) + 250)
+            return mine;
+        return ball;
+    }
     if (AI_DECOYS && decoys.length) {
         const goal = aiLeft(me.team) ? -1 : 1, s = aiSide(me);
         let bt = Infinity, threat = null;
@@ -272,7 +285,14 @@ function aiPickFocus(me, A) {
         }
         if (threat)
             best = threat;                 // whatever will score on us first is the business at hand
-        else if ((ball.x - NETX) * s >= 40) { // the death ball is not on our half: a decoy that is, is a chance
+        else if (A.combo === 'sweep') {    // stage 6: she volleys: the nearest death ball on her half (the real one or one of her swarm), whichever it is
+            let bd = Infinity;
+            for (const d of [ball, ...decoys.filter(d => d.swarm && d.owner === me)])
+                if ((d.x - NETX) * s < 40 && Math.hypot(d.x - me.x, d.y - me.y) < bd) {
+                    bd = Math.hypot(d.x - me.x, d.y - me.y);
+                    best = d;
+                }
+        } else if ((ball.x - NETX) * s >= 40) { // the death ball is not on our half: a decoy that is, is a chance
             let bd = Infinity;
             for (const d of decoys)
                 if ((d.x - NETX) * s < 40 && Math.hypot(d.x - me.x, d.y - me.y) < bd) {
@@ -876,6 +896,7 @@ function* aiHeldJob(me0, hs0, out) { // the best held plan from here (after the 
                         kk.up = dk.up;
                     }
                     const pv = V.b.vy > 0 ? Math.atan2(V.b.vy, Math.abs(V.b.vx)) : 0; // how steeply the ball is falling (for the plunge preference below)
+                    const by0 = V.b.y, bvx0 = V.b.vx, bvy0 = V.b.vy; // (the ball as it is about to cross the line: where in the goal, and how flat)
                     const sc = aiSimStep(V, kk);
                     minD = Math.min(minD, aiGap(V));
                     minY = Math.min(minY, V.me.y);
@@ -889,6 +910,11 @@ function* aiHeldJob(me0, hs0, out) { // the best held plan from here (after the 
                         if (sc === V.me.team) {
                             scoreT = relT + j + 1;
                             v += (ai[V.me.id].plunge || 0) * Math.min(1, pv / (Math.PI / 3)); // plunge shots (a boss trait, ai[i].plunge): a score that comes down steeply is worth more
+                            const mid = (GOAL_Y0 + GOAL_Y1) / 2, flat = Math.abs(bvy0) < 0.35 * Math.abs(bvx0);
+                            if (flat && by0 < mid)                  // DRIVING (ai[i].drive): a flat, fast shot into the top half of the goal
+                                v += (ai[V.me.id].drive || 0) * Math.min(1, Math.abs(bvx0) / 700);
+                            if (by0 > mid + (GOAL_Y1 - mid) * 0.3 && Math.abs(bvy0) < 0.5 * Math.abs(bvx0)) // SWEEP (ai[i].sweep): a shot that skims the floor into the bottom of the goal
+                                v += (ai[V.me.id].sweep || 0) * Math.min(1, (by0 - mid) / ((GOAL_Y1 - mid) * 0.8));
                         } else
                             v -= 500;                  // the release ended in OUR goal (the swing / the toss went in): as bad as it gets
                         break;
@@ -1136,7 +1162,13 @@ function aiArrowRun(me, A, k, S) {
 
 // ---- PLINKO: a peg in the way of a shot (and step out of it), or a wall of pegs in front of our goal ----
 const aiPlinkoWant = me => pegs.filter(q => q.owner === me).length < PEG_MAX && ((ball.x - NETX) * aiSide(me) >= 40 || players.some(q => q.team !== me.team && q.alive && q.onBall));
-const aiPlinkoSpot = me => { const off = RUN + PL * (pegs.filter(q => q.owner === me).length ? 3.2 : 1.4); return aiLeft(me.team) ? off : W - off; };
+const aiPlinkoSpot = me => {
+    const n = pegs.filter(q => q.owner === me).length;
+    if (ai[me.id].plinkoBoost && n === 1)  // the boosting peg (stage 2): up by the net on our half: a shot that clips it comes off faster (pegs bounce like the hatchet), and the held-ball plans look for exactly that
+        return NETX - aiSide(me) * PL * 4.5;
+    const off = RUN + PL * (n ? 3.2 : 1.4);
+    return aiLeft(me.team) ? off : W - off;
+};
 const aiWaitX = me => (AI_SPECIALS && me.has('plinko') && me.cd.plinko <= 0 && aiPlinkoWant(me) ? aiPlinkoSpot(me) : aiMid(me));
 function aiSpPlinko(me, A, k) {
     if (me.cd.plinko > 0 || me.onBall || me.casts.length)
@@ -1185,6 +1217,23 @@ function aiSpDecoy(me, A, k) {
 // death ball) as soon as one can connect. A shot's cost = the time to charge / turn to it + the arrow's flight; she fires when a shot costs under 2.2 s. ----
 const aiKeyOf = (me, id) => (me.slots().find(s => s[1] === id) || ['sp'])[0];
 const AI_DCA_ANGS = Array.from({ length: 24 }, (_, i) => -Math.PI + i * Math.PI / 12);
+function aiDcaSend(me, T, x, y) { // an arrow hits body T at (x, y): is the ball, sent at the nearest enemy at me.arrowSend, going to reach them (walls and the net included)?
+    let f0 = null, fd = 1e9;
+    for (const q of players)
+        if (q.team !== me.team && q.alive) { const d = Math.hypot(q.x - x, q.y - y); if (d < fd) { fd = d; f0 = q; } }
+    if (!f0)
+        return false;
+    const S = me.arrowSend || 700, fx = snapshotFx(), b = Object.assign(new Ball(), T), e = aiEnemySnap(f0);
+    b.x = x; b.y = y; b.vx = (f0.x - x) / (fd || 1) * S; b.vy = (f0.y - y) / (fd || 1) * S;
+    let ok = false;
+    for (let n = 0; n < 80 && !ok; n++) {
+        b.step();
+        aiEnemyStep(e);
+        ok = Math.hypot(b.x - e.x, b.y - e.y) < e.r + b.r;
+    }
+    restoreFx(fx);
+    return ok;
+}
 function aiDcaShot(me, T) { // { cost, ang, ch }: the quickest arrow that reaches body T (straight line + gravity against T's ballistic path), or null
     let best = null;
     for (const ch of [0.3, 0.6, 1]) {
@@ -1203,6 +1252,8 @@ function aiDcaShot(me, T) { // { cost, ang, ch }: the quickest arrow that reache
                 if (arrowHitsTerrain({ x: ax, y: ay })) break; // it would stick in a wall first
             }
             if (hit < 0) continue;
+            const th = (hit + 1) * DT;
+            if (!aiDcaSend(me, T, T.x + T.vx * th, T.y + T.vy * th + 0.5 * BALL_G * th * th)) continue; // a truly good angle: the ball it sends must reach them from where the arrow meets it
             const cost = Math.max(ch * ARROW_CHARGE_T, Math.abs(wrapAng(ang - me.arrowAng)) / ARROW_TURN) + hit * DT;
             if (!best || cost < best.cost) best = { cost, ang, ch };
         }
@@ -1222,7 +1273,7 @@ function aiSpDecoyArrow(me, A, k) {
             const s2 = aiDcaShot(me, ball);
             if (s2 && (!shot || s2.cost < shot.cost - 0.3 || shot.cost > 2.2)) { shot = s2; at = 'ball'; }
         }
-        if (shot && shot.cost < (threat ? 1.4 : 2.2)) {
+        if (shot && shot.cost < (threat ? 1.4 : 1.8)) {
             const key = aiKeyOf(me, 'arrow');
             k[key] = true;
             A.sp = { id: 'dca', t: 0, rp: 0.25, at, ang: shot.ang, ch: shot.ch, key };
@@ -1296,6 +1347,65 @@ function aiRollWorld(atk, self, b, foes) {
     }
     restoreFx(fx);
     return v;
+}
+
+// ---- SWEEP (the stage 6 boss, combo 'sweep'): she keeps the death balls on her half moving at the player: marionette shoves them all (aiSwarmShove), and when they pool within the bat's reach she
+// charges the bat and swings it along the line that sends the most of them towards the player.
+const aiSweepBodies = (me, pad) => [ball, ...decoys.filter(d => d.swarm && d.owner === me)].filter(b => !(me.onBall && me.tball === b) && Math.hypot(b.x - me.x, b.y - me.y) < BAT_REACH + b.r + pad);
+function aiSweepAim(me, c, force) { // the best of the eight swings: { ang, hits, q } (q: how well it points at the player)
+    const bodies = aiSweepBodies(me, 8), fo = aiFoes(me).reduce((m, q) => (!m || Math.hypot(q.x - me.x, q.y - me.y) < Math.hypot(m.x - me.x, m.y - me.y) ? q : m), null);
+    if (!bodies.length || !fo)
+        return null;
+    const fx = snapshotFx(), bear = Math.atan2(fo.y - me.y, fo.x - me.x);
+    let best = null;
+    for (const [dx, dy] of AI_MARIO_DIRS) {
+        const ang = Math.atan2(dy, dx), q = Math.cos(ang - bear);
+        let hits = 0;
+        for (const b of bodies)
+            if (aiBatHitTick(me, c, ang, Object.assign(new Ball(), b), x => x.step()) >= 0)
+                hits++;
+        const sc = hits * 2 + q;
+        if (hits && (force || (q > 0.3 && (hits >= 2 || q > 0.7))) && (!best || sc > best.sc))
+            best = { ang, hits, q, sc };
+    }
+    restoreFx(fx);
+    return best;
+}
+function aiSweepRun(me, A, k, S) {
+    const c = me.casting('bat');
+    if (!c) {
+        A.sp = null;
+        A.spCool = 0.2;
+        return;
+    }
+    S.n++;
+    if (!c.charging)
+        return;                                // the swing is running
+    k[S.key] = true;                           // keep charging
+    if (S.n % 3 !== 0 && S.n < 200)
+        return;
+    const best = aiSweepAim(me, c, S.n >= 200);
+    if (best || S.n >= 200) {
+        const ang = best ? best.ang : 0, hx = Math.round(Math.cos(ang)), hy = Math.round(Math.sin(ang));
+        k[S.key] = false;
+        k.l = hx < 0; k.r = hx > 0; k.up = hy < 0; k.dn = hy > 0;
+        A.sp = null;
+        A.spCool = 0.4;
+    }
+}
+function aiSpSweep(me, A, k) {
+    if (me.casts.length)
+        return;
+    if (me.cd.bat <= 0 && !me.onBall && !me.rope && !me.pending) {
+        const near = aiSweepBodies(me, 40);
+        if (near.length >= 2 || (near.length === 1 && Math.hypot(near[0].vx, near[0].vy) < 150 && near[0] !== ball)) {
+            const key = aiKeyOf(me, 'bat');
+            k[key] = true;                     // start charging: the swing goes when it would send them at the player
+            A.sp = { id: 'sweep', n: 0, key, keep: true };
+            return;
+        }
+    }
+    aiSpMarionette(me, A, k);
 }
 
 // ---- BAT ----
@@ -1603,6 +1713,54 @@ function aiSpExplode(me, A, k) {
         A.spCool = 0.5;
     }
 }
+// INSTANT TRANSMISSION (the stage 4 boss, combo 'transmit'): her Warp does not drop a marker: it lets her appear anywhere within 1 PL of the ball (the Warp cooldown still applies), and she plays
+// Explode as eagerly as it can be played: any blast that is a little better than none goes off, and the teleport is used to get the blast in range (teleport, then blast in the same tick).
+function aiSpTransmit(me, A, k) {
+    if (me.casts.length || me.cd.explode > 0)
+        return;
+    const foes = aiFoes(me), snaps = foes.map(aiEnemySnap), R = EXPLODE_R + 30;
+    const inReach = foes.some(q => Math.hypot(q.x - me.x, q.y - me.y) < R + q.r) || Math.hypot(ball.x - me.x, ball.y - me.y) < R + ball.r;
+    const ok = r => r.v1 >= AI_EXPLODE_MIN * 0.5 && r.v1 - r.v0 >= AI_EXPLODE_GAIN * 0.4;
+    if (inReach) {
+        const r = aiExplodeValueFor(me, ball, snaps);
+        if (ok(r)) {
+            k.sp = true;
+            if (me.onBall)
+                k.z = false;
+            A.spCool = 0.3;
+            return;
+        }
+    }
+    if (me.cd.warp > 0 || me.onBall || me.rope || me.pending)
+        return;
+    const best = { v: -Infinity, x: 0, y: 0 };
+    for (let a = 0; a < 8; a++) {              // eight spots on a ring just outside the ball's body (touching it would kill us)
+        const ang = a * Math.PI / 4, x = ball.x + Math.cos(ang) * (ball.r + me.r + 6), y = ball.y + Math.sin(ang) * (ball.r + me.r + 6);
+        if (x < me.r + 4 || x > W - me.r - 4 || y < me.r + 4 || y > aiFloorY(x) - me.r - 2 || Math.abs(x - NETX) < me.r + 14 && y > aiFloorY(NETX) - 120)
+            continue;
+        if (foes.some(q => Math.hypot(q.x - x, q.y - y) < q.r + me.r + 30))
+            continue;                          // not into somebody's face (their body is a hazard if they carry the death ball; keep clear)
+        const pr = Object.create(me);
+        pr.x = x;
+        pr.y = y;
+        const r = aiExplodeValueFor(pr, ball, snaps);
+        if (ok(r) && r.v1 > best.v) {
+            best.v = r.v1;
+            best.x = x;
+            best.y = y;
+        }
+    }
+    if (best.v === -Infinity)
+        return;
+    me.warpFx = { t: WARP_FX, ax: me.x, ay: me.y, bx: best.x, by: best.y };
+    me.x = best.x;
+    me.y = best.y;
+    me.warp = null;
+    me.cd.warp = WARP_COOLDOWN;
+    me.netSide = me.x < NETX ? 0 : 1;
+    k.sp = true;                               // ... and the blast, in the same tick
+    A.spCool = 0.3;
+}
 // An invade jump that ends up close to the enemy and the ball with a blast that pays off.
 function* aiBlastJob(me0, frozen, tgt, out) {
     const S = aiSimNew(me0), en0 = aiEnemySnap(tgt);
@@ -1818,6 +1976,8 @@ function aiSpecialRun(me, A, k) {
         aiDcaRun(me, A, k, S);
     else if (S.id === 'arrow')
         aiArrowRun(me, A, k, S);
+    else if (S.id === 'sweep')
+        aiSweepRun(me, A, k, S);
     else if (S.id === 'bat')
         aiBatRun(me, A, k, S);
     else if (S.id === 'barb')
@@ -1835,8 +1995,8 @@ function aiSpecial(me, A, k) {
     else if (A.aw)
         A.aw = null;
     if (A.sp) { aiSpecialRun(me, A, k); return; }
-    const id = A.combo === 'decoyArrow' && me.has('decoy') && me.has('arrow') ? 'decoyArrow' : me.slots()[0][1]; // (a campaign boss with both plays them as one plan)
-    const busy = (A.E || A.X || A.V) && id !== 'explode' && id !== 'bat'; // a committed jump is in flight; a look-ahead is not. (A blast or a swing may go off mid-jump: that is what the jump is for)
+    const id = A.combo === 'decoyArrow' && me.has('decoy') && me.has('arrow') ? 'decoyArrow' : A.combo === 'transmit' && me.has('explode') && me.has('warp') ? 'transmit' : A.combo === 'sweep' && me.has('marionette') && me.has('bat') ? 'sweep' : me.slots()[0][1]; // (a campaign boss with both plays them as one plan)
+    const busy = (A.E || A.X || A.V) && id !== 'explode' && id !== 'transmit' && id !== 'sweep' && id !== 'bat'; // a committed jump is in flight; a look-ahead is not. (A blast or a swing may go off mid-jump: that is what the jump is for)
     if (A.spCool > 0 || busy || (A.spT = (A.spT || 0) - 1) > 0)
         return;
 
@@ -1853,7 +2013,9 @@ function aiSpecial(me, A, k) {
         warp: aiSpWarp,
         awakened: aiSpAwakened,
         explode: aiSpExplode,
-        decoyArrow: aiSpDecoyArrow
+        decoyArrow: aiSpDecoyArrow,
+        transmit: aiSpTransmit,
+        sweep: aiSpSweep
     }[id];
 
     if (f) {

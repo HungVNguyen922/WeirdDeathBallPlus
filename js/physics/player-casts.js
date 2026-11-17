@@ -165,10 +165,10 @@ mixin(Player, {
                 this.vy += uy * DASH_V;
                 if (ds) {
                     this.dash2Ready = false;
-                    this.cd.dash2 = Math.max(0.5, DASH_COOLDOWN - this.dashCut[1]);
+                    this.cd.dash2 = Math.max(this.dashMin, DASH_COOLDOWN - this.dashCut[1]);
                 } else {
                     this.dashReady = false;
-                    this.cd.dash = Math.max(0.5, DASH_COOLDOWN - this.dashCut[0]);
+                    this.cd.dash = Math.max(this.dashMin, DASH_COOLDOWN - this.dashCut[0]);
                 }
                 this.dashT = DASH_FX;
                 this.dashDir = [ux, uy];

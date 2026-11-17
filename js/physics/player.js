@@ -42,6 +42,7 @@ class Player {
         this.special2 = 'plinko'; // second special (only used while twoSpecials is on; never the same as `special`)
         this.prevSp2 = false;
         this.dual = false; // campaign boss: has both specials without the two-specials mode
+        this.dashMin = 0.5; // (the shortest a dash cooldown can be: the campaign's Speed of Light takes it to 0)
         this.dashN = 1; this.dashCut = [0, 0]; // campaign boss: number of separate dashes (1 or 2), and how many seconds each one's cooldown has been cut
         this.warp = null; // Warp: the placed marker { x, y }, or null (replaced, never edited in place, so the AI's shallow copies are safe)
         this.awakeT = 0; // Awakened: seconds of power-up left (0 = not awake)

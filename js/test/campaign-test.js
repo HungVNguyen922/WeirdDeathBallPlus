@@ -49,7 +49,7 @@ R('point(0, "scores!")');
 check(R('pause === 0 && !over && score[0] === 1'), 'a point is scored with no pause and no stage end');
 check(R('Math.abs(ball.x - NETX) < 1 && ball.y < NET_GAP + 40 && ball.vx === 0 && ball.vy === 0 && ball.w === 0'), 'the ball respawns at the top of the net with no speed or spin left');
 for (let i = 0; i < 90; i++) R('update()');
-check(R('ball.y > 80 && ball.vy > 50 && Math.abs(ball.x - NETX) < 0.01'), 'and falls dead straight down the net line');
+check(R('ball.y > 55 && ball.vy > 50 && Math.abs(ball.x - NETX) < 0.01'), 'and falls dead straight down the net line');
 R('players[0].alive = false; players[0].x = 50');
 R('point(1, "wipes out the other team!")');
 check(R('players[0].alive && score[1] === 1 && pause === 0'), 'a killed player respawns straight away');
@@ -127,7 +127,7 @@ check(R('players[1].dashCut[0] === 0 && players[1].dashCut[1] === 0'), 'the cuts
 console.log('A BOSS WITH TWO SPECIALS');
 sim.run('campaign.stage = 3; campaignApply(); resetMatch(); campaign.draft.on = false; campaign.bannerT = 0; players[0].special = "dash"; players[0].special2 = "plinko"');
 check(R('NET_GAP === CAMPAIGN_STAGES[3].gap'), 'stage 4: its own net');
-check(R('JSON.stringify(players[1].slots())') === '[["sp","explode"],["sp2","bat"]]', 'boss 4 has explode on its first key and bat on its second');
+check(R('JSON.stringify(players[1].slots())') === '[["sp","explode"],["sp2","warp"]]', 'boss 4 has explode on its first key and warp on its second');
 check(R('players[0].slots().length') === 2 && R('players[1].slots().length') === 2, 'both have two keys');
 
 console.log('THE AI PLAYS EACH BOSS');
@@ -299,6 +299,113 @@ console.log('CAMPAIGN HOME SCREEN, PRACTICE, STAGE 5 SENDS BALLS');
     check(!err, 'the new stage 5 AI runs 90 s with no errors' + (err ? ' ' + err.message : ''));
     console.log(`       decoys ${s.run('nd')}, arrow volleys ${s.run('nf')}, ticks with a ball sent fast ${s.run('fast')}, score ${JSON.stringify(s.run('score'))}`);
     check(s.run('nd') >= 5 && s.run('nf') >= 8 && s.run('fast') > 20, 'she throws decoys constantly and sends balls at you');
+}
+
+console.log('STAGE 5 BOSS GRAPPLES HER DECOY');
+{
+    const s = loadSim();
+    s.run('campaignStart(); campaign.stage = 4; campaignApply(); resetMatch(); campaign.draft.on = false; campaign.bannerT = 0; pick.on = false; pause = 0; players[0].keys.l = false; var hd = 0, hb = 0, fa = 0, df = 0, pa = 0, pd = 0; const of_ = fireArrow; fireArrow = function (p, c) { fa++; return of_(p, c); }; const op = point; point = function (t, m) { const me = players[0]; if (t === 1) { if (decoys.some(d => Math.hypot(d.x - me.x, d.y - me.y) < 90)) pd++; else pa++; } return op(t, m); }');
+    for (let i = 0; i < 120 * 90; i++)
+        s.run('players[0].x = NETX - 450; players[0].y = H - 40; players[0].vx = 0; update(); if (over) { score = [0, 0]; over = false; pause = 0; } { const t = players[1].tball; if (t && decoys.includes(t)) hd++; else if (t === ball) hb++; }');
+    const hd = s.run('hd') / 120, hb = s.run('hb') / 120;
+    console.log(`       holding a decoy ${hd.toFixed(1)} s, the ball ${hb.toFixed(1)} s, arrows ${s.run('fa')}, points by decoy ${s.run('pd')} / other ${s.run('pa')}`);
+    check(hd > 4, 'the stage 5 boss grapples her decoy');
+    check(hb > 1, 'and the death ball');
+    check(s.run('pd') >= 2, 'and swings it into the other player');
+    check(s.run('fa') < 25, 'while saving her arrows for a good angle');
+}
+
+console.log('CAMPAIGN 1 STAGE TABLE, CLOCK AND SCORING');
+{
+    const s = loadSim();
+    const st = JSON.parse(s.run('JSON.stringify(campaignStages().map(x => ({ goal: x.goal, time: x.time || null, gap: x.gap / PL, special: x.special, special2: x.special2 || null })))'));
+    check(JSON.stringify(st.map(x => x.gap)) === '[1,1,4,4,4,4]', 'net gaps are 1, 1, 4, 4, 4, 4 PL');
+    check(JSON.stringify(st.map(x => x.goal)) === '[5,5,7,7,7,9]', 'goals are 5, 5, 7, 7, 7, 9');
+    check(JSON.stringify(st.map(x => x.time)) === '[60,90,120,180,210,null]', 'time limits are 1:00, 1:30, 2:00, 3:00, 3:30 and none');
+    check(st[3].special === 'explode' && st[3].special2 === 'warp' && st[5].special === 'marionette' && st[5].special2 === 'bat', 'stage 4 has explode + warp, stage 6 marionette + bat');
+    const fresh = () => { const t = loadSim(); t.run('localStorage = undefined; campaignStart(); campaign.stage = 0; campaignApply(); resetMatch(); campaign.draft.on = false; campaign.bannerT = 0; pick.on = false; pause = 0'); return t; };
+    let t = fresh();
+    t.run('campaign.pts = 0; campaignOnPoint(0, "scores!")');
+    check(t.run('campaign.pts') === 500, 'a goal is worth 500');
+    t.run('campaign.pts = 0; campaignOnPoint(0, "wipes out the other team!")');
+    check(t.run('campaign.pts') === 300, 'a kill is worth 300');
+    t = fresh();
+    t.run('score = [2, 1]; campaign.pts = 0; campaign.timeT = 0.001; campaignClockTick()');
+    check(t.run('over') === true && t.run('campaign.won') === 0 && t.run('campaign.pts') === 100, 'time up while ahead is a win worth 100 (not perfect: she scored)');
+    t = fresh();
+    t.run('score = [1, 1]; campaign.pts = 0; campaign.timeT = 0.001; campaignClockTick()');
+    check(t.run('over') === true && t.run('campaign.won') === 1 && t.run('campaign.pts') === 0, 'a tie when time is up is a loss');
+    t = fresh();
+    t.run('score = [2, 0]; campaign.pts = 0; campaign.timeT = 0.001; campaignClockTick()');
+    check(t.run('campaign.pts') === 600, 'a timeout win with the boss on zero is 100 + a perfect 500');
+    t = fresh();
+    t.run('campaign.pts = 0; score = [5, 2]; over = true; campaignOverText(0)');
+    check(t.run('campaign.pts') === 300, 'a proper win is worth 300');
+    // graze: an object passing close without touching
+    t = fresh();
+    t.run('const me = allPlayers[0]; me.x = 200; me.y = H - 40; me.invT = 0; ball.x = me.x + me.r + ball.r + 10; ball.y = me.y; ball.vx = 0; ball.vy = -400; campaign.pts = 0; campaignGrazeTick()');
+    check(t.run('campaign.pts') === 100, 'a fast death ball passing close pays a 100 graze');
+    t.run('campaignGrazeTick()');
+    check(t.run('campaign.pts') === 100, 'but the same object does not pay again straight away');
+    // high score
+    t = fresh();
+    t.run('var store = {}; localStorage = { getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = v; } }; campaign.practice = null; campaign.pts = 900; campaignRecordHi()');
+    check(t.run('campaign.newHi') === true && t.run('campaignHi(CAMPAIGN_LIST[0].id)') === 900, 'a better run is saved as the high score');
+    t.run('campaign.pts = 400; campaignRecordHi()');
+    check(t.run('campaign.newHi') === false && t.run('campaignHi(CAMPAIGN_LIST[0].id)') === 900, 'a worse one is not');
+    // speed of light
+    t = loadSim();
+    t.run('campaignStart(); campaign.stage = 2; campaignApply(); resetMatch(); campaign.draft.on = false; campaign.bannerT = 0; pick.on = false; pause = 0; score = [4, 0]; campaignOnPoint(1, "scores!")');
+    check(t.run('allPlayers[1].dashCut[0] + allPlayers[1].dashCut[1]') > 0 && t.run('allPlayers[1].dashMin') === 0.5, 'stage 3: every point either way shortens one of her dashes');
+    t.run('score = [5, 0]; campaignOnPoint(0, "scores!")');
+    check(t.run('allPlayers[1].dashMin') === 0 && t.run('allPlayers[1].cd.dash') === 0 && t.run('allPlayers[1].cd.dash2') === 0, 'player on 5 points: SPEED OF LIGHT, her dashes have no cooldown');
+    t.run('const c0 = allPlayers[1].dashCut.slice(); campaignOnPoint(1, "scores!"); var same = JSON.stringify(c0) === JSON.stringify(allPlayers[1].dashCut)');
+    check(t.run('same') && t.run('allPlayers[1].dashMin') === 0, 'and it stays that way');
+}
+
+console.log('SPECIALTIES: DRIVING, SWEEP, TRANSMISSION, PLINKO, SWEEP BAT');
+{
+    const s = loadSim();
+    const f = n => JSON.parse(s.run('campaignStart(); campaign.stage = ' + n + '; campaignApply(); JSON.stringify([ai[1].plunge, ai[1].drive, ai[1].sweep, ai[1].plinkoBoost, allPlayers[1].explodeCd, ai[1].combo])'));
+    check(f(0)[0] > 0 && f(2)[0] > 0 && f(1)[0] === 0, 'plunge belongs to stages 1 and 3');
+    check(f(3)[1] > 0 && f(4)[1] > 0 && f(0)[1] === 0, 'driving belongs to stages 4 and 5');
+    check(f(5)[2] > 0 && f(4)[2] === 0, 'sweep belongs to stage 6');
+    check(f(1)[3] === true && f(0)[3] === false, 'plinko boosting belongs to stage 2');
+    check(f(3)[4] > 0 && f(3)[4] < 10 && f(3)[5] === 'transmit', 'stage 4: Instant Transmission and a short blast cooldown (so she can chain them)');
+    check(f(0)[4] === 0, 'other bosses keep the normal blast cooldown');
+}
+{   // stage 4: she teleports next to the ball and blasts
+    const s = loadSim();
+    s.run('campaignStart(); campaign.stage = 3; campaignApply(); resetMatch(); campaign.draft.on = false; campaign.bannerT = 0; pick.on = false; pause = 0; var tp = 0, ex = 0, dmax = 0; var lw = null;');
+    let err = null;
+    try {
+        for (let i = 0; i < 120 * 70; i++)
+            s.run('allPlayers[0].x = NETX - 300; allPlayers[0].y = H - 40; allPlayers[0].vx = 0; update(); if (over) { score = [0, 0]; over = false; pause = 0; } { const p = allPlayers[1]; if (p.warpFx && p.warpFx.t > WARP_FX - 0.009) { tp++; dmax = Math.max(dmax, Math.hypot(p.x - ball.x, p.y - ball.y)); } if (p.explodeFx && p.explodeFx.t > EXPLODE_FX - 0.009) ex++; }');
+    } catch (e) { err = e; }
+    check(!err, 'the stage 4 AI runs 70 s with no errors' + (err ? ' ' + err.message : ''));
+    console.log(`       teleports ${s.run('tp')}, blasts ${s.run('ex')}, farthest arrival from the ball ${Math.round(s.run('dmax'))}`);
+    check(s.run('tp') >= 1 && s.run('ex') >= 1, 'she teleports and blasts');
+    check(s.run('dmax') <= 60, 'she arrives right next to the ball (within about 1 PL of it)');
+}
+{   // stage 6: the sweep: bat and marionette
+    const s = loadSim();
+    s.run('campaignStart(); campaign.stage = 5; campaignApply(); resetMatch(); campaign.draft.on = false; campaign.bannerT = 0; pick.on = false; pause = 0; var bat = 0, mar = 0, pb = 0, pm = 0;');
+    let err = null;
+    try {
+        for (let i = 0; i < 120 * 80; i++)
+            s.run('allPlayers[0].x = NETX - 300; allPlayers[0].y = H - 40; allPlayers[0].vx = 0; update(); if (over) { score = [0, 0]; over = false; pause = 0; } { const p = allPlayers[1]; if (p.cd.bat > BAT_COOLDOWN - 0.02 && pb <= BAT_COOLDOWN - 0.02) bat++; pb = p.cd.bat; if (p.cd.marionette > MARIONETTE_COOLDOWN - 0.02 && pm <= MARIONETTE_COOLDOWN - 0.02) mar++; pm = p.cd.marionette; }');
+    } catch (e) { err = e; }
+    check(!err, 'the stage 6 AI runs 80 s with no errors' + (err ? ' ' + err.message : ''));
+    console.log(`       bat swings ${s.run('bat')}, marionette shoves ${s.run('mar')}`);
+    check(s.run('mar') >= 1, 'she shoves her death balls with the marionette');
+    check(s.run('bat') >= 1, 'and swings the bat at pooled balls');
+}
+{   // stage 2: the second peg goes up by the net
+    const s = loadSim();
+    s.run('campaignStart(); campaign.stage = 1; campaignApply(); resetMatch(); campaign.draft.on = false; campaign.bannerT = 0; pick.on = false; pause = 0; var fwd = 0;');
+    for (let i = 0; i < 120 * 60; i++)
+        s.run('allPlayers[0].x = NETX - 300; allPlayers[0].y = H - 40; allPlayers[0].vx = 0; update(); if (over) { score = [0, 0]; over = false; pause = 0; } if (pegs.some(q => q.owner === allPlayers[1] && Math.abs(q.x - NETX) < 6 * PL)) fwd++;');
+    check(s.run('fwd') > 0, 'the stage 2 boss puts a peg up by the net');
 }
 console.log(fails ? `\n${fails} FAILED` : '\nall passed');
 process.exit(fails ? 1 : 0);
