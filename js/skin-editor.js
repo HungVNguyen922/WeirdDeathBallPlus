@@ -267,6 +267,61 @@
         rebuild();
     }
 
+    // ---- export / import: the same shape list as CAMPAIGN_SKINS in game/campaign.js, one row per shape in L()'s order: [type, x, y, w, h, rotation, colour, outside] (a 9th number, the group, only when a shape has one) ----
+    const skinRows = clean => clean.map(l => [l.t, l.x, l.y, l.w, l.h, l.r, l.c, l.o ? 1 : 0].concat(l.g ? [l.g] : []));
+    const skinCode = clean => '[' + skinRows(clean).map(r => 'L(' + r.map(v => typeof v === 'string' ? "'" + v + "'" : v).join(', ') + ')').join(', ') + ']'; // paste-ready for CAMPAIGN_SKINS
+    function exportSkin() {
+        const clean = skinClean(layers);
+        if (!clean.length) { msg = 'Nothing to export yet: add a shape first.'; rebuild(); return; }
+        const text = '{\n  "game": "Weird Death Ball Plus",\n  "type": "skin",\n  "order": ["shape", "x", "y", "w", "h", "rotation", "colour", "outside", "group (only if grouped)"],\n  "skin": [\n' + skinRows(clean).map(r => '    ' + JSON.stringify(r)).join(',\n') + '\n  ]\n}\n';
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+        a.download = 'wdb-skin-' + (skinState().slot + 1) + '.json';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+        msg = 'Exported ' + clean.length + ' shape' + (clean.length === 1 ? '' : 's') + ' as ' + a.download + '.';
+        rebuild();
+    }
+    async function copyCode() {
+        const clean = skinClean(layers);
+        if (!clean.length) { msg = 'Nothing to copy yet: add a shape first.'; rebuild(); return; }
+        try { await navigator.clipboard.writeText(skinCode(clean)); msg = 'Copied as code: ' + clean.length + ' L(...) shapes, ready to paste into CAMPAIGN_SKINS.'; }
+        catch (e) { msg = 'Could not reach the clipboard. Use Export JSON instead.'; }
+        rebuild();
+    }
+    // reads any of: this file's format, a plain list of rows, a list of {t, x, y, ...} objects, or pasted code like [L('oval', 0, 0, 1, 1, 0, '#ffd54f', 0), ...]
+    function parseSkin(text) {
+        const fromRow = r => Array.isArray(r) ? (r.length >= 8 ? { t: r[0], x: r[1], y: r[2], w: r[3], h: r[4], r: r[5], c: r[6], o: r[7], g: r[8] } : null) : r;
+        try {
+            const j = JSON.parse(text), list = Array.isArray(j) ? j : j && (j.skin || j.layers || (j.skin && j.skin.layers));
+            if (Array.isArray(list))
+                return list.map(fromRow).filter(Boolean);
+        } catch (e) { /* not JSON: try code */ }
+        const out = [], re = /L\(\s*'([a-z]+)'\s*,\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)\s*,\s*'(#[0-9a-fA-F]{6})'\s*,\s*(\d)\s*(?:,\s*(\d)\s*)?\)/g;
+        for (let m; (m = re.exec(text));)
+            out.push({ t: m[1], x: +m[2], y: +m[3], w: +m[4], h: +m[5], r: +m[6], c: m[7], o: +m[8], g: m[9] ? +m[9] : undefined });
+        return out;
+    }
+    function importSkin(file) {
+        if (!file)
+            return;
+        const rd = new FileReader();
+        rd.onerror = () => { msg = 'Could not read that file.'; rebuild(); };
+        rd.onload = () => {
+            const clean = skinClean(parseSkin(String(rd.result)));
+            if (clean.length) {
+                layers = clean.map(l => ({ ...l }));
+                sel = layers.length - 1;
+                msg = 'Imported ' + clean.length + ' shape' + (clean.length === 1 ? '' : 's') + '. Press Save to keep it.';
+            } else msg = 'That file is not a skin: no valid shapes in it.';
+            rebuild();
+        };
+        rd.readAsText(file);
+    }
+    const fileIn = el('input', { type: 'file', accept: '.json,.js,.txt,application/json,text/plain', style: 'display:none', onchange: () => { importSkin(fileIn.files[0]); fileIn.value = ''; } });
+
     function rebuild() {
         root.textContent = '';
         const teamRow = el('div', { className: 'row' }, el('span', { className: 'hint', textContent: 'Preview as' }));
@@ -293,6 +348,7 @@
         root.append(el('div', { className: 'skinwrap' },
             el('div', { className: 'skinleft' }, slotRow, cv, teamRow,
                 el('div', { className: 'row', style: 'margin-top:10px' }, saveBtn, revertBtn, el('button', { className: 'mode', textContent: 'Clear all', onclick: () => { layers = []; sel = -1; rebuild(); } })),
+                el('div', { className: 'row', style: 'margin-top:6px' }, el('button', { className: 'mode', textContent: 'Export JSON', title: 'Download this skin as a .json file', onclick: exportSkin }), el('button', { className: 'mode', textContent: 'Copy as code', title: 'Copy the shapes as L(...) code, the same format as CAMPAIGN_SKINS', onclick: copyCode }), el('button', { className: 'mode', textContent: 'Import JSON', title: 'Load a skin from a .json file (then Save to keep it)', onclick: () => fileIn.click() }), fileIn),
                 el('p', { className: 'hint', textContent: msg || 'Inside shapes are cut off at the circle; outside ones can stick out like a hat. Your team colour always shows as a rim, so everyone can tell the teams apart. Online, only signed-in players show their skin to others.' })),
             el('div', { className: 'skinright' },
                 el('div', { className: 'group' }, el('h3', { textContent: `Shapes (${layers.length} / ${SKIN_MAX_LAYERS}), top one is drawn last` }), layerList()),
