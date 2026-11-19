@@ -1,6 +1,6 @@
-// MUSIC - plays the BeepBox song in song-data.js (SONG) through a live Web Audio synth.
-// Load order in your HTML:  <script src="song-data.js"></script>  then  <script src="music.js"></script>
-// To change the song: edit it in BeepBox, export .mid, run  python midi_to_song.py song.mid > song-data.js
+// MUSIC - plays BeepBox songs (song-data format) through a live Web Audio synth, or looped recordings. One song per place: see THEMES just below (js/audio/themes/mainTheme, c1s6, ...).
+// Load order in your HTML:  <script src="song-data.js"></script> (optional now: it is only the fallback when js/audio/themes has no mainTheme)  then  <script src="music.js"></script>
+// To make a song: edit it in BeepBox, export .mid, run  python midi_to_song.py song.mid > js/audio/themes/c1s6.js  and add its name to THEME_FILES
 // To change how each channel SOUNDS: edit the instrument tables in INSTRUMENTS below (and the knobs just above them).
 // A look-ahead scheduler keeps stepping through the loop forever, so there is no gap and reverb / delay tails
 // ring straight across the loop point. Press M or use the Music button to mute.
@@ -9,8 +9,22 @@
 // operator frequency ratios, how much each operator modulates another, and the "twang" envelopes (a bright, hard attack that
 // mellows quickly, which is what makes a plucked-string / koto sound) all come from there.
 const Music = (() => {
-    const BPM = SONG.bpm, STEP = 60 / BPM / 4;   // one 16th note, in seconds (BPM comes from the BeepBox file)
-    const BAR = 16, STEPS = SONG.bars * BAR;     // steps per bar / steps in the whole loop
+    // ---- THEMES: one song per place (the menu / base game, each campaign stage) ----
+    // A theme is a file in THEME_DIR named after it. Two kinds work, and the first one found for a name is used:
+    //   NAME.js              a BeepBox song in the song-data.js format (midi_to_song.py output: a `const SONG = {...}`; any variable name will do), played by the synth below
+    //   NAME.mp3 .ogg .wav   a recording, looped
+    // Names:  mainTheme = the menu and the base game.   c<campaign>s<stage> = a campaign stage, e.g. c1s6 = campaign 1, stage 6 (campaign.js asks for them, see campaignThemeName).
+    // A stage with no song falls back to mainTheme. List every song you have in THEME_FILES (that stops the game asking for files that are not there).
+    const THEME_DIR = 'js/audio/themes/';
+    const THEME_MAIN = 'mainTheme';
+    const THEME_FILES = ['mainTheme', 'c1s5', 'c1s6'];
+    const THEME_EXT = ['js', 'mp3', 'ogg', 'wav', 'm4a'];
+    let song = typeof SONG !== 'undefined' ? SONG : null;   // the song the synth plays (the built-in one from song-data.js until a theme loads)
+    let BPM = 130, STEP = 60 / 130 / 4;          // one 16th note, in seconds (BPM comes from the BeepBox file)
+    const BAR = 16;                              // steps per bar
+    let STEPS = song ? song.bars * BAR : 16;     // steps in the whole loop
+    const setTiming = () => { BPM = song.bpm; STEP = 60 / BPM / 4; STEPS = song.bars * BAR; };
+    if (song) setTiming();
     const AHEAD = 0.3, TICK = 50;                // schedule 0.3 s ahead, check every 50 ms
     const LEVEL = 0.38;                          // master volume (it's background music)
     const mtof = m => 440 * Math.pow(2, (m - 69) / 12);
@@ -21,7 +35,7 @@ const Music = (() => {
     const PLUCK = 1;        // multiplies how fast plucks lose their brightness: lower = longer sparkle, higher = quicker, drier "pluck"
 
     // ---- audio graph state ----
-    let ctx = null, master, duck, revIn, dlyIn, noiseBuf;
+    let ctx = null, master, duck, revIn, dlyIn, noiseBuf, dlyNode;
     let enabled = true, step = 0, nextT = 0, timer = null;
     try { enabled = localStorage.getItem('wdb-music') !== '0'; } catch (e) {}
 
@@ -44,7 +58,7 @@ const Music = (() => {
         const revOut = ctx.createGain(); revOut.gain.value = 0.45;
         revIn.connect(conv); conv.connect(revOut); revOut.connect(master);
         // dotted-eighth feedback delay
-        const dly = ctx.createDelay(1); dly.delayTime.value = STEP * 3;
+        const dly = dlyNode = ctx.createDelay(1); dly.delayTime.value = STEP * 3;
         const dlp = ctx.createBiquadFilter(); dlp.type = 'lowpass'; dlp.frequency.value = 2600;
         const fb = ctx.createGain(); fb.gain.value = 0.36;
         const dlyOut = ctx.createGain(); dlyOut.gain.value = 0.5;
@@ -54,10 +68,8 @@ const Music = (() => {
         noiseBuf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
         const nd = noiseBuf.getChannelData(0);
         for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
-        buildEvents();
-        nextT = ctx.currentTime + 0.15;
-        step = 0;
-        timer = setInterval(schedule, TICK);
+        theme.name = null;
+        startTheme(theme.want);                        // (a theme asked for before the first key press starts now)
     }
 
     // ---- FM voice ----
@@ -286,28 +298,112 @@ const Music = (() => {
     // ---- turn SONG into a per-step event list (done once) ----
     const events = [];
     function buildEvents() {
+        events.length = 0;
         for (let s = 0; s < STEPS; s++) events[s] = [];
-        for (const name in SONG.tracks) {
+        for (const name in song.tracks) {
             if (!PARTS[name]) continue;
-            SONG.tracks[name].forEach((bar, b) => {
+            song.tracks[name].forEach((bar, b) => {
                 for (const [st, m, len] of bar) {
                     const s = b * BAR + st;
                     if (s < STEPS) events[s].push(t => PARTS[name](t, m, len));
                 }
             });
         }
-        for (const n in SONG.drums) {
+        for (const n in song.drums) {
             if (!DRUMS[n]) continue;
-            for (const s of SONG.drums[n]) if (s < STEPS) events[s].push(DRUMS[n]);
+            for (const s of song.drums[n]) if (s < STEPS) events[s].push(DRUMS[n]);
         }
     }
 
     function schedule() {
+        if (!song || !events.length)
+            return;
         while (nextT < ctx.currentTime + AHEAD) {
             for (const ev of events[step % STEPS]) ev(nextT);
             nextT += STEP;
             step++;
         }
+    }
+
+    // ---- themes: load, switch ----
+    const theme = { want: THEME_MAIN, name: null, token: 0, audio: null, node: null };
+    const found = {};                                  // name -> Promise of { kind: 'song', song } | { kind: 'file', url } | null
+    function loadTheme(name) {
+        if (found[name]) return found[name];
+        const urlOf = e => THEME_DIR + encodeURIComponent(name) + '.' + e;
+        const tryExt = i => {
+            if (i >= THEME_EXT.length) return Promise.resolve(null);
+            const ext = THEME_EXT[i], url = urlOf(ext);
+            return fetch(url, ext === 'js' ? undefined : { method: 'HEAD' }).then(r => {
+                if (!r.ok) return tryExt(i + 1);
+                if (ext !== 'js') return { kind: 'file', url };
+                return r.text().then(text => {
+                    const m = /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*\{/m.exec(text);   // song-data.js format: whatever the variable is called
+                    const sg = m ? new Function(text + '\n;return ' + m[1] + ';')() : null;
+
+                    console.log('[Theme parse]', name, {
+                        foundDeclaration: !!m,
+                        song: sg,
+                        bpm: sg?.bpm,
+                        bars: sg?.bars,
+                        tracks: Object.keys(sg?.tracks || {})
+                    });
+
+                    if (!sg || !sg.bpm || !sg.bars || !sg.tracks) { console.warn('theme ' + name + ': ' + url + ' is not a song-data file'); return tryExt(i + 1); }
+                    return { kind: 'song', song: sg };
+                });
+            }).catch(() => tryExt(i + 1));
+        };
+        return (found[name] = tryExt(0));
+    }
+    function stopTheme() {
+        if (timer) { clearInterval(timer); timer = null; }
+        if (theme.audio) { theme.audio.pause(); theme.audio = null; }
+    }
+    function playSong(sg) {
+        song = sg;
+        setTiming();
+        if (dlyNode) dlyNode.delayTime.value = STEP * 3;
+        buildEvents();
+        nextT = ctx.currentTime + 0.15;
+        step = 0;
+        timer = setInterval(schedule, TICK);
+    }
+    function playFile(url) {
+        const a = new Audio(url);
+        a.loop = true;
+        a.crossOrigin = 'anonymous';
+        const src = ctx.createMediaElementSource(a);
+        src.connect(master);
+        theme.audio = a;
+        a.play().catch(() => {});
+    }
+    // Switch to the theme called name. Falls back to mainTheme (then to the built-in song) when there is no such song. The same theme twice is a no-op, so a retry of a stage keeps playing.
+    function startTheme(name) {
+        if (!ctx || name === theme.name) return;
+        const my = ++theme.token;
+        theme.name = name;
+        const known = THEME_FILES.includes(name) ? name : THEME_MAIN;
+        const fade = (name2) => loadTheme(name2).then(t => {
+            if (my !== theme.token) return;            // (another switch came in while this one loaded)
+            if (!t && name2 !== THEME_MAIN)
+                return loadTheme(THEME_MAIN).then(m => { if (my === theme.token) go(m); });
+            go(t);
+        });
+        const go = t => {
+            stopTheme();
+            if (t && t.kind === 'file') playFile(t.url);
+            else if (t && t.kind === 'song') playSong(t.song);
+            else if (song) playSong(song);             // nothing in the themes folder: the song-data.js one
+            if (enabled) master.gain.setTargetAtTime(LEVEL, ctx.currentTime, 0.12);
+        };
+        master.gain.setTargetAtTime(0, ctx.currentTime, 0.06);   // a short dip between songs
+        setTimeout(() => { if (my === theme.token) fade(known); }, 220);
+    }
+    // Ask for a theme by name (before the audio has started this just remembers it).
+    function playTheme(name) {
+        theme.want = name || THEME_MAIN;
+        if (ctx) startTheme(theme.want);
     }
 
     // ---- on/off ----
@@ -351,9 +447,10 @@ const Music = (() => {
     if (btn) btn.addEventListener('click', () => { toggle(); const c = document.getElementById('c'); if (c) c.focus(); });
     document.addEventListener('visibilitychange', () => {       // timers are throttled in hidden tabs, so just pause
         if (!ctx) return;
-        if (document.hidden) ctx.suspend(); else if (enabled) ctx.resume();
+        if (document.hidden) { ctx.suspend(); if (theme.audio) theme.audio.pause(); }
+        else if (enabled) { ctx.resume(); if (theme.audio) theme.audio.play().catch(() => {}); }
     });
     label();
 
-    return { toggle, get enabled() { return enabled; } };
+    return { toggle, play: playTheme, get theme() { return theme.want; }, get playing() { return { name: theme.name, kind: theme.audio ? 'file' : 'song', bpm: BPM }; }, get enabled() { return enabled; } };
 })();

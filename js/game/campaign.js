@@ -3,7 +3,7 @@
 // next stage starts with a fresh score, its own net, and the next boss. LOSE a stage and the whole run starts again from stage 1 (`continues` counts the tries).
 // Points do not end the round: after a point the ball respawns at the top of the net and falls down the net line, anyone who was killed respawns at once, and play carries on.
 // Offline only, never saved: a plain local mode that sits on top of rules.js (goalOf(), point(), newRound()) and ai.js (aiPickSpecial, ai[i].lvl / .plunge, aiLag).
-// ROGUELIKE LOADOUT: the campaign is always a two-special game. Before stage 1 you are offered 3 random specials and keep one; before stage 2 you are offered 3 more (never the one
+// ROGUELIKE LOADOUT: the campaign is always a two-special game. Before stage 1 you are offered 3 random specials and keep one; before stage 3 you are offered 3 more (never the one
 // you have) for your second key. After that the loadout is fixed for the run (the free-swap menu is off). A new run (after a loss) drafts again. Every stage opens with a banner.
 // Load after ai.js. A boss is one entry of CAMPAIGN_STAGES; campaignApply() puts it into the game. Add fields there for new bosses and read them in campaignApply().
 // Boss skins: one list of layers per stage (see skin-data.js: t shape, x/y centre in player radii, w/h half size, r rotation, c colour, o 0 = inside the circle / 1 = outside, like a hat).
@@ -37,12 +37,19 @@ const CAMPAIGN_DASH_CUT = 1;           // seconds every point (either way) takes
 const CAMPAIGN_INV_T = 1;              // seconds of invincibility for a player who respawns after a point (so a carried-over decoy cannot spawn-camp)
 const CAMPAIGN_BANNER_T = 2.2;         // seconds of the stage banner (the world holds still)
 const CAMPAIGN_LOCK_T = 0.7;           // seconds the chosen card shows before the draft closes
-const CAMPAIGN_DRAFT_AT = [0, 1];      // the stages (0-based) that open with a draft: the first and the second special
+const CAMPAIGN_DRAFT_AT = [0, 2];      // the stages (0-based) that open with a draft: the first special (before stage 1) and the second (before stage 3: you clear stage 2 with one special)
 // The campaigns on the home screen. Add one by adding an entry with its own stages array (same fields as CAMPAIGN_STAGES).
 const CAMPAIGN_LIST = [
-    { id: 'bosses', name: 'THE SIX BOSSES', blurb: 'Six fights, one long run. Lose a stage and it starts over.', stages: CAMPAIGN_STAGES },
+    { id: 'bosses', num: 1, name: 'THE SIX BOSSES', blurb: 'Six fights, one long run. Lose a stage and it starts over.', stages: CAMPAIGN_STAGES },
 ];
 const campaignStages = () => (campaign.def || CAMPAIGN_LIST[0]).stages;
+// Music: every stage has its own theme file in js/audio/themes, named c<campaign number>s<stage number> (c1s6 = campaign 1, stage 6); everywhere else (the menu, the home screen, the base game) is mainTheme.
+// A stage whose song does not exist yet just keeps playing mainTheme. (Song names are listed in THEME_FILES at the top of js/audio/music.js.)
+const campaignThemeName = () => campaign.on ? 'c' + ((campaign.def || CAMPAIGN_LIST[0]).num || 1) + 's' + (campaign.stage + 1) : 'mainTheme';
+function campaignMusic() {
+    if (typeof Music !== 'undefined')
+        Music.play(campaignThemeName());
+}
 const campaign = { on: false, def: null, practice: null, pts: 0, pops: [], clock: 0, timeT: null, newHi: false, stage: 0, continues: 0, won: null, clear: false, saved: null, bannerT: 0, draft: { on: false, slot: 0, offer: [], cur: 1, t: 0, lock: 0, chosen: -1, prev: 0 } }; // won = who took the stage that just ended (0 = you, 1 = the boss); clear = the last stage was just beaten
 const campaignStage = () => campaignStages()[Math.min(campaign.stage, campaignStages().length - 1)];
 const campaignGoal = () => campaignStage().goal;
@@ -91,6 +98,7 @@ function campaignApply() {
     ai[1].drive = s.drive || 0;          // how much the AI likes flat, fast shots at the top half of the goal
     ai[1].plinkoBoost = !!s.plinkoBoost;  // stage 2: her second peg goes up by the net, where her shots can bounce off it
     ai[1].sweep = s.sweep || 0;          // how much it likes shots that skim the floor into the bottom half of the goal
+    campaignMusic();                     // this stage's theme
 }
 function campaignStart() {
     if (campaign.on)
@@ -98,7 +106,7 @@ function campaignStart() {
     campaign.saved = { swapOn, pickFixed, twoSpecials, teamSize, ai0: ai[0].on, ai1: ai[1].on, sp: allPlayers.map(p => [p.special, p.special2]) };
     swapOn = false;                            // one fixed side per stage
     pickFixed = false;                         // the boss' ability is set by the stage, not by a pick screen
-    twoSpecials = true;                        // always two slots (you have the second one from stage 2 on)
+    twoSpecials = true;                        // always two slots (you have the second one from stage 3 on)
     campaignLoadoutReset();
     if (teamSize !== 1) {
         layoutTeams(1);
@@ -140,6 +148,7 @@ function campaignStop(restore = true) {
     }
     if (restore)
         resetMatch();
+    campaignMusic();                           // back to the main theme
 }
 const campaignAbort = () => campaignStop(false); // a setter in rules.js that changes the match type (2v2, Flex, roster, ...) calls this first
 // The text after the score message when a stage ends (rules.js point()).
@@ -429,7 +438,7 @@ function campaignPracticeNext() {
     return true;
 }
 // ---- THE LOADOUT DRAFT ----
-// Your specials start empty each run: special = your first (key 1), special2 = your second (null until stage 2's draft).
+// Your specials start empty each run: special = your first (key 1), special2 = your second (null until stage 3's draft).
 function campaignLoadoutReset() {
     const p = allPlayers[0];
     p.special = p.special && p.special !== 'fighter' ? p.special : 'dash'; // (a placeholder until the first draft; the first slot always has something)

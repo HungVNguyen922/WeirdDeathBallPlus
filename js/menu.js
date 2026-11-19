@@ -120,12 +120,54 @@ const gameMenu = (() => {
             }
             if (sc < bs) { bs = sc; best = b; }
         }
+        if ((dir === 'l' || dir === 'r') && !best) { // nothing exactly beside it (the skin screen: a column of layer buttons next to a shorter column of slots): take the nearest one in that direction, not just the same row
+            const inTabs = cur.closest('.dhead');
+            for (const b of list) {
+                if (b === cur || (!inTabs && b.closest('.dhead')))
+                    continue;
+                const q = b.getBoundingClientRect(), dx = q.left + q.width / 2 - cx0, dy = q.top + q.height / 2 - cy0;
+                if (dx * (dir === 'r' ? 1 : -1) <= 1)
+                    continue;
+                const sc = Math.abs(dy) * 3 + Math.abs(dx);
+                if (sc < bs) { bs = sc; best = b; }
+            }
+        }
         if (!best)
             return;
         best.focus();
         if (best.classList.contains('tab'))
             best.click(); // moving along the tab row switches the tab
     }
+    // A toggle (or a slot, a skin shape...) redraws its panel, which throws away the highlighted button and sent the highlight back to the top. Remember where it was and put it on the nearest button once the redraw is done.
+    let lastFocus = null;
+    const remember = el => { if (el && el.tagName === 'BUTTON' && menu.contains(el)) { const r = el.getBoundingClientRect(); lastFocus = { id: el.id, x: r.left + r.width / 2, y: r.top + r.height / 2, text: el.textContent }; } };
+    menu.addEventListener('focusin', e => remember(e.target));
+    menu.addEventListener('click', e => remember(e.target.closest && e.target.closest('button')), true);
+    let restoreQueued = false;
+    new MutationObserver(() => {
+        if (restoreQueued || menu.hidden || !lastFocus)
+            return;
+        restoreQueued = true;
+        requestAnimationFrame(() => {
+            restoreQueued = false;
+            const a = document.activeElement;
+            if (menu.hidden || !lastFocus || (a && a !== document.body && menu.contains(a) && a.getClientRects().length))
+                return;                        // the highlight survived (or is somewhere else on purpose)
+            const list = navList();
+            if (!list.length)
+                return;
+            let pick = lastFocus.id && list.find(b => b.id === lastFocus.id);
+            if (!pick) {
+                let bd = Infinity;
+                for (const b of list) {
+                    const r = b.getBoundingClientRect(), d = Math.hypot(r.left + r.width / 2 - lastFocus.x, r.top + r.height / 2 - lastFocus.y) + (b.textContent === lastFocus.text ? -1000 : 0);
+                    if (d < bd) { bd = d; pick = b; }
+                }
+            }
+            if (pick)
+                pick.focus({ preventScroll: true });
+        });
+    }).observe(menu, { childList: true, subtree: true });
     window.addEventListener('keydown', e => {
         if (menu.hidden || capturing || e.ctrlKey || e.metaKey || e.altKey)
             return;
@@ -319,7 +361,7 @@ const gameMenu = (() => {
             return;
         pickEl.textContent = '';
         if (typeof campaign !== 'undefined' && campaign.on) {
-            pickEl.textContent = 'Your specials come from the campaign draft (the first before stage 1, the second before stage 2).';
+            pickEl.textContent = 'Your specials come from the campaign draft (the first before stage 1, the second before stage 3).';
             return;
         }
         if (pickFixed) {

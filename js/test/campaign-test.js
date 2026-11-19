@@ -76,10 +76,11 @@ for (let st = 0; st < stages; st++) {
     R('point(0, "scores!")');
     check(R('over'), `stage ${st + 1}: ${goal} points clears it`);
     finish();
-    if (st === 0) check(R('campaign.draft.on && campaign.draft.slot === 1 && JSON.stringify(campaign.draft.offer) === \'["bat","warp","decoy"]\''), 'stage 2 opens with the second draft (bat, warp, decoy)');
-    if (st === 1) check(R('!campaign.draft.on && campaign.bannerT > 0'), 'stage 3 has just the banner');
+    if (st === 0) check(R('!campaign.draft.on && campaign.bannerT > 0 && players[0].special2 === null'), 'stage 2 has just the banner (still one special)');
+    if (st === 1) check(R('campaign.draft.on && campaign.draft.slot === 1 && JSON.stringify(campaign.draft.offer) === \'["bat","warp","decoy"]\''), 'stage 3 opens with the second draft (bat, warp, decoy)');
     skip();
-    if (st === 0) check(R('players[0].slots().length === 2 && players[0].special2 !== players[0].special'), 'after stage 2\'s draft you have two specials');
+    if (st === 0) check(R('players[0].slots().length === 1 && players[0].special2 === null'), 'you play stage 2 with one special');
+    if (st === 1) check(R('players[0].slots().length === 2 && players[0].special2 !== players[0].special'), 'after stage 3\'s draft you have two specials');
     if (st < stages - 1) check(R('campaign.on && campaign.stage === ' + (st + 1) + ' && score[0] === 0 && score[1] === 0'), `then stage ${st + 2} starts at 0-0`);
 }
 check(R('!campaign.on'), 'clearing the last stage ends the campaign');
@@ -259,7 +260,7 @@ console.log('CAMPAIGN HOME SCREEN, PRACTICE, STAGE 5 SENDS BALLS');
     for (let i = 0; i < 40; i++) R2('update()');
     press('z', 3);
     for (let i = 0; i < 120; i++) R2('update()');
-    check(R2('campaign.draft.on && campaign.draft.slot === 1 && campaign.stage === 1'), 'then the second draft');
+    check(R2('campaign.draft.on && campaign.draft.slot === 1 && campaign.stage === 2'), 'then the second draft (before stage 3)');
     for (let i = 0; i < 40; i++) R2('update()');
     press('z', 3);
     for (let i = 0; i < 120; i++) R2('update()');
@@ -454,7 +455,7 @@ console.log('SPEED OF LIGHT DASHES, HELD-BALL STANCE');
     };
     const a = run(false), b = run(true);
     console.log(`       60 s: normal ${JSON.stringify(a)}, Speed of Light ${JSON.stringify(b)}`);
-    check(b.dashes >= 1.5 * a.dashes && b.dashes >= 15, 'with Speed of Light she dashes a lot more (it is how she moves)');
+    check(b.dashes >= a.dashes && b.air >= a.air && b.dashes >= 15, 'with Speed of Light she dashes at least as much, and more in the air (both now dash to dodge, so a plain boss is near her cap too)');
     check(b.air >= 1, 'including in mid-flight');
     check(b.dead <= 1, 'and does not run herself into the death ball');
     check(b.goals >= a.goals * 0.6, 'and her attack does not suffer for it');
@@ -465,6 +466,74 @@ console.log('SPEED OF LIGHT DASHES, HELD-BALL STANCE');
     for (let i = 0; i < 120 * 4; i++)
         s.run('allPlayers[0].onBall = true; allPlayers[0].tball = ball; ball.x = 540; ball.y = 120; ball.vx = 0; ball.vy = 0; update();');
     check(s.run('allPlayers[1].x') > 700, 'while the player holds the ball over the net she backs off towards her goal (x = ' + Math.round(s.run('allPlayers[1].x')) + ')');
+}
+console.log('PART 15: DASH EVADE, STAGE 5 DEFENCE, PLINKO RICOCHET AND WHIP');
+{   // shots straight at Speed of Light (5 points in, so the dash is free): she dodges most of them, but not every one
+    let seed = 4242; const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+    let died = 0, dashes = 0, N = 40;
+    for (let n = 0; n < N; n++) {
+        const s = loadSim();
+        s.run('campaignStart(); campaign.stage = 2; campaignApply(); resetMatch(); campaign.draft.on = false; campaign.bannerT = 0; pick.on = false; pause = 0; players[0].x = 100; players[1].dashMin = 0; players[1].dashCut = [DASH_COOLDOWN, DASH_COOLDOWN]; score = [0, 5];');
+        const bossx = 560 + rnd() * 300, bx = 420 + rnd() * 80, by = 120 + rnd() * 160, spd = 650 + rnd() * 500;
+        s.run(`players[1].x = ${bossx}; players[1].y = H - 40; players[1].vx = 0;`);
+        for (let i = 0; i < 150; i++) s.run(`players[0].onBall = true; players[0].tball = ball; ball.x = ${bx}; ball.y = ${by}; ball.vx = 0; ball.vy = 0; update();`);
+        const tx = s.run('players[1].x'), ty = s.run('players[1].y'), a = Math.atan2(ty - by - (rnd() < 0.5 ? 0 : 80), tx - bx) + (rnd() - 0.5) * 0.12;
+        s.run(`players[0].onBall = false; players[0].tball = null; ball.vx = ${Math.cos(a) * spd}; ball.vy = ${Math.sin(a) * spd};`);
+        let dead = 0, pinv = s.run('players[1].invT > 0');
+        for (let i = 0; i < 264; i++) {
+            s.run('update(); players[1].cd.dash = Math.min(players[1].cd.dash, 0); players[1].cd.dash2 = Math.min(players[1].cd.dash2, 0);');
+            if (s.run('players[1].dashT > DASH_FX - 0.009')) dashes++;
+            const iv = s.run('players[1].invT > 0'); if (iv && !pinv) dead = 1; pinv = iv;
+        }
+        died += dead;
+    }
+    console.log(`       ${N} shots at her: she died ${died}, dashes ${dashes}`);
+    check(died <= 8, 'Speed of Light dodges most shots aimed at her (died ' + died + ' of ' + N + ')');
+    check(dashes >= 10, 'by dashing out of the way (' + dashes + ' dashes)');
+    check(died >= 1 || dashes < N, 'but not every single time');
+}
+{   // stage 5: the player holds the ball over the net: she defends with it instead of playing with her decoy
+    const s = loadSim();
+    s.run('campaignStart(); campaign.stage = 4; campaignApply(); resetMatch(); campaign.draft.on = false; campaign.bannerT = 0; pick.on = false; pause = 0; players[0].onBall = true; players[0].tball = ball; ball.x = 500; ball.y = 150; ball.vx = 0; ball.vy = 0;');
+    check(s.run('aiDcaPressure(players[1])') === true, 'a player holding the ball over the net is pressure');
+    s.run('players[0].onBall = false; players[0].tball = null; ball.x = 200; ball.y = 300; ball.vx = 100; ball.vy = 0;');
+    check(s.run('aiDcaPressure(players[1])') === false, 'a ball loose on their own side is not');
+    s.run('ball.x = 700; ball.y = 400; ball.vx = -400; ball.vy = 50;');
+    check(s.run('aiDcaPressure(players[1])') === true, 'a ball moving about on her half is');
+}
+{   // plinko ricochet: the finder only picks spots where a peg really sends the shot back at the player, and she does it without dying
+    const s0 = loadSim();
+    s0.run('campaignStart(); campaign.stage = 1; campaignApply(); resetMatch(); campaign.draft.on = false; campaign.bannerT = 0; pick.on = false; pause = 0; players[1].cd.plinko = 0; pegs.length = 0;');
+    let seed = 5; const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+    const sc = [];
+    for (let n = 0; n < 300 && sc.length < 4; n++) {
+        const px = 700 + rnd() * 220, bx = 420 + rnd() * 200, by = 120 + rnd() * 440, vx = 200 + rnd() * 400, vy = -250 + rnd() * 450, ex = 100 + rnd() * 300;
+        s0.run(`players[0].x = ${ex}; players[0].y = aiFloorY(${ex}) - players[0].r; players[1].x = ${px}; players[1].y = aiFloorY(${px}) - players[1].r; players[1].vx = 0; players[1].vy = 0; players[1].ground = true; ball.x = ${bx}; ball.y = ${by}; ball.vx = ${vx}; ball.vy = ${vy}; ball.w = 0;`);
+        if (s0.run('aiRicochetFind(players[1])')) sc.push({ px, bx, by, vx, vy, ex });
+    }
+    check(sc.length >= 2, 'the finder does find ricochets (' + sc.length + ' of the random shots)');
+    let casts = 0, died = 0, back = 0;
+    for (const c of sc) {
+        const s = loadSim();
+        s.run(`campaignStart(); campaign.stage = 1; campaignApply(); resetMatch(); campaign.draft.on = false; campaign.bannerT = 0; pick.on = false; pause = 0; pegs.length = 0; players[0].special = 'dash'; players[0].x = ${c.ex}; players[0].y = aiFloorY(${c.ex}) - players[0].r; players[1].cd.plinko = 0; ai[1].spCool = 0; players[1].x = ${c.px}; players[1].y = aiFloorY(${c.px}) - players[1].r; players[1].ground = true; ball.x = ${c.bx}; ball.y = ${c.by}; ball.vx = ${c.vx}; ball.vy = ${c.vy}; ball.w = 0;`);
+        let pinv = false, mn = 0;
+        for (let i = 0; i < 360; i++) { s.run('update()'); const iv = s.run('players[1].invT > 0'); if (iv && !pinv) died++; pinv = iv; mn = Math.min(mn, s.run('ball.vx')); }
+        casts += s.run('aiStats.ric || 0') ? 1 : 0; back += mn < -450 ? 1 : 0;
+    }
+    check(casts === sc.length, 'she walks to the spot and drops the peg (' + casts + ' of ' + sc.length + ')');
+    check(died === 0, 'without dying');
+    check(back >= sc.length - 1, 'and the ball comes back at the player fast (' + back + ' of ' + sc.length + ')');
+}
+{   // plinko whip while holding the ball: she does it now and then, and it does not wreck her game
+    const s = loadSim();
+    s.run('campaignStart(); campaign.stage = 1; Math.random = (() => { let x = 7; return () => { x = (x * 16807) % 2147483647; return x / 2147483647; }; })(); campaignApply(); resetMatch(); campaign.draft.on = false; campaign.bannerT = 0; pick.on = false; pause = 0; players[0].x = NETX - 300; var wg = [0, 0], wps = [0, 0], wd = 0, wpv = false;');
+    for (let i = 0; i < 120 * 150; i++)
+        s.run('update(); if (over) { score = [0, 0]; wps = [0, 0]; over = false; pause = 0; } for (const t of [0, 1]) if (score[t] > wps[t]) { wg[t] += score[t] - wps[t]; wps[t] = score[t]; } { const iv2 = players[1].invT > 0; if (iv2 && !wpv) wd++; wpv = iv2; }');
+    const whip = s.run('(typeof aiStats !== "undefined" && aiStats.whip) || 0'), wg = s.run('wg'), wd = s.run('wd');
+    console.log(`       150 s: whips ${whip}, goals ${JSON.stringify(wg)}, deaths ${wd}`);
+    check(whip >= 1, 'she plinko-whips the ball at times (' + whip + ')');
+    check(wd <= 3, 'without dying more than she did before (' + wd + ')');
+    check(wg[1] >= wg[0], 'and still out-scores a player who stands still');
 }
 console.log(fails ? `\n${fails} FAILED` : '\nall passed');
 process.exit(fails ? 1 : 0);

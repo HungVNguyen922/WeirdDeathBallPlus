@@ -27,7 +27,7 @@ const AI_RESCUE = true;                  // false = old behaviour (only 'clean' 
 const AI_RESCUE_HOLDS = [0.15, 0.35, 0.7]; // how long (s) a rescue grab holds on before letting go: short = just shave the ball's speed, longer = really drag it
 const AI_RESCUE_STYLES = [2, 4, 0];      // grapple-jump tap counts the rescue search tries
 const AI_RESCUE_AFTER = 120;             // steps played after the release to see whether the ball still gets in
-const AI_RESCUE_MARGIN = 1;              // a rescue grab only has to keep this many u clear of touching the ball (the normal search wants a 36 u gap); it must never touch
+const AI_RESCUE_MARGIN = 7;              // a rescue grab only has to keep this many u clear of touching the ball (the normal search wants a 36 u gap); it must never touch
 const AI_DASH_USE = 0.35;                 // chance that a latch is allowed to use the dash shot at all (0 = never dashes, 1 = old behaviour). The rest of the time it shoots with the rope alone.
 const AI_THREAT = 50; // dodge when the ball would get this close (u; touching is 30)
 const AI_SPECIALS = true;                  // false = the AI only ever uses Dash, like before
@@ -253,6 +253,14 @@ const AI_RACE = true;                      // the Shot Race: while holding a bal
 const AI_RACE_MARGIN = 4;                  // ticks: our shot has to land at least this long before their ball does to count as winning the race
 const AI_DEFEND_LEAD = 40;                 // ticks (~0.33 s) it takes us, once free, to react and jump to a ball coming at our goal
 let AIB = ball;
+// Is the player putting the death ball on our goal? They hold it on (or near) our half, or it is loose on our half and moving. The stage 5 boss stops playing with her decoy then and defends: grapple the ball
+// and swing round it, or shoot it with an arrow.
+function aiDcaPressure(me) {
+    const s = aiSide(me), x = (ball.x - NETX) * s;
+    if (players.some(q => q.team !== me.team && q.alive && q.onBall && q.tball === ball))
+        return x < 360;
+    return x < 60 && Math.hypot(ball.vx, ball.vy) > 140;
+}
 const aiStats = { invades: 0 };            // (for testing)
 function aiPickFocus(me, A) {
     if (me.onBall && me.tball)
@@ -269,6 +277,8 @@ function aiPickFocus(me, A) {
         }
         if (threat)
             return threat;
+        if (aiDcaPressure(me))
+            return ball;                   // they are shooting on us (or about to): the death ball is the business, not the decoy
         if (mine && Math.hypot(mine.x - me.x, mine.y - me.y) < Math.hypot(ball.x - me.x, ball.y - me.y) + 250)
             return mine;
         return ball;
@@ -570,6 +580,7 @@ const AI_SLICE = 96, AI_PRE = 8;          // jump jobs: physics steps per tick, 
 const AI_SLICE_H = 48, AI_PRE_H = 24;      // held-plan jobs: bigger, because they must finish within their latency window (AI_PRE_H ticks) to be about the moment they land
 const AI_JUMP_STEPS = 180, AI_SAFE_STEPS = 84, AI_HELD_STEPS = 96, AI_AFTER_STEPS = 72, AI_LOOP_STEPS = 180, AI_LOOP_MAX = 2.4, AI_STALL_MAX = 2.2; // look-ahead lengths (steps): a jump, the safe time after latching, a held plan, the time after a release
 const AI_WAIT_FRAC = 0.5; // where the AI waits when the ball is not its business: 0 = against the net, 0.5 = the midline of its half (the book's Midline Defense), 1 = at its goal. (The old spot was 90 u from the net, about 0.19.)
+const AI_RICOCHET = true;                  // a plinko user drops pegs where a shot is going to pass, to aim it (false = pegs only for dodging and at the usual spots)
 const AI_SPEED_OF_LIGHT = true;            // a dash with no cooldown (dashMin 0) is used as locomotion
 const AI_HELD_FRAC = 0.8;                  // how far back towards our goal we wait while the enemy holds the ball over our half (1 = at the goal line)
 const aiMid = me => NETX - aiSide(me) * AI_WAIT_FRAC * NETX;
@@ -580,6 +591,7 @@ const aiSide = me => (aiLeft(me.team) ? 1 : -1); // +1: we defend the left goal 
 const aiNoKeys = () => ({ l: false, r: false, up: false, dn: false, z: false, x: false, sp: false, sp2: false });
 const aiNearest = (me, b) => me.candidates(me.sim ? b : ball).reduce((m, o) => (!m || o.d < m.d ? o : m), null); // (a planning copy only knows the body it plans with; the real game also offers the death ball and every decoy)
 const aiDashKey = me => (me.slots().find(s => s[1] === 'dash') || ['sp'])[0]; // the key the dash is on (a campaign boss may have it on the second key)
+const aiPlinkoKey = me => (me.slots().find(s => s[1] === 'plinko') || ['sp'])[0]; // the key the plinko is on
 const aiCanDash = (me, hs) => me.has('dash') && me.dashSlot() >= 0 && !(hs && hs.noDash); // hs.noDash: this latch shoots with the rope only
 const aiCanGrip = me => me.gCool <= 0 && me.gCharge > AI_GRIP_MIN; // the grapple meter: enough left to latch on and do something with it
 
@@ -627,6 +639,13 @@ function aiHeldKeys(me, b, hs, k) {
         k.z = false;                           // the meter is about to tear it away anyway: let go on our own terms
     if (hs.rescue !== undefined && hs.t > hs.rescue && !aiRisky(tb, me))
         k.z = false;                           // a rescue grab: it only had to bleed off the ball's speed. (Only let go if the ball is then somewhere safe: a slow ball left rolling towards our goal is just a goal a moment later; the normal plans take over instead.)
+    if (hs.plink && !hs.plinked && hs.t >= 0.05 && me.cd.plinko <= 0 && !me.casts.length) { // plinko whip: drop the peg right here, pushing out the way chosen
+        k[aiPlinkoKey(me)] = true;
+        k.l = hs.plink === 'l'; k.r = hs.plink === 'r'; k.up = hs.plink === 'up'; k.dn = false;
+        hs.plinked = true;
+        if (!me.sim)
+            aiStats.whip = (aiStats.whip || 0) + 1;
+    }
     if (hs.warp && !hs.warped && hs.t >= 0.05 && me.warp && me.cd.warp <= 0) { // warp to the marker mid-hold: the rope is stretched past its length and whips the ball
         k.sp = true;
         hs.warped = true;
@@ -734,7 +753,8 @@ function aiSimStep(S, k) { // one physics step; returns the scoring team if the 
     return sc === null ? null : sideSwap(sc);
 }
 const aiGap = S => Math.hypot(S.me.x - S.b.x, S.me.y - S.b.y);
-const aiDead = S => aiGap(S) < S.me.r + S.b.r + 2;
+const AI_DEAD_PAD = 6;                     // u: a look-ahead calls it a death when the gap is this much more than touching. (Dying costs a boss her cooldowns, so she would rather concede a goal than shave a ball: the real game never matches the look-ahead to the last u)
+const aiDead = S => aiGap(S) < S.me.r + S.b.r + AI_DEAD_PAD;
 
 function* aiJumpJob(me0, frozen, delays, modes, out, styles = [0], robust = false, rescue = false) { // do we latch onto the ball, without touching it, if we jump after one of these delays (in ticks, most likely first)?
     const W = aiSimNew(me0), snaps = {}, asc = [...delays].sort((p, q) => p - q); // the waiting copy: walks on with `frozen` keys for AI_PRE ticks, then stands still
@@ -875,13 +895,19 @@ function* aiHeldJob(me0, hs0, out) { // the best held plan from here (after the 
     const vals = {};                           // each plan's value before the stay-with-it bonus
     const warpOk = me0.has('warp') && me0.warp && me0.cd.warp <= 0 && Math.hypot(me0.warp.x - me0.x, me0.warp.y - me0.y) > 200 && !hs0.warped; // a marker far from here: a shot may be worth warping into
     const variants = [];
+    // PLINKO WHIP: the peg appears where the cast began and pushes us out of it (the way the arrow keys are held); the rope is stretched past its length and the ball whips round us. With the ball looping close to us
+    // this adds a lot of speed to a shot. Tried at the start of a loop or sling, pushing left, right or up; the look-ahead says whether it is worth it.
+    const plinkOk = AI_RICOCHET && me0.has('plinko') && me0.cd.plinko <= 0 && !hs0.plinked && Math.hypot(S.b.x - S.me.x, S.b.y - S.me.y) < 150 && Math.hypot(S.b.vx, S.b.vy) > 150;
     for (const plan of plans) {
-        variants.push([plan, false]);
+        variants.push([plan, false, null]);
         if (warpOk && /^(sling|loop)/.test(plan))
-            variants.push([plan, true]);       // the same plan, with a warp at the start
+            variants.push([plan, true, null]); // the same plan, with a warp at the start
+        if (plinkOk && /^(sling|loop)/.test(plan))
+            for (const pd of ['l', 'r', 'up'])
+                variants.push([plan, false, pd]);
     }
-    for (const [plan, wv] of variants) {
-        const V = aiSimFork(S), h = { ...hs, plan, warp: wv };
+    for (const [plan, wv, pd] of variants) {
+        const V = aiSimFork(S), h = { ...hs, plan, warp: wv, plink: pd };
         let minD = 1e9, minY = 1e9, minHome = 1e9, v = null, relT = Infinity, scoreT = Infinity, relX = 0, dead = false; // minHome: the ball's closest approach to our goal line
         const steps = plan === 'loopO' || plan === 'loopU' ? AI_LOOP_STEPS : AI_HELD_STEPS; // a loop needs time to come round
         for (let i = 0; i < steps && v === null; i++) {
@@ -988,13 +1014,14 @@ function* aiHeldJob(me0, hs0, out) { // the best held plan from here (after the 
         if (AI_LOW && minY < AI_ALT_SOFT) v -= (AI_ALT_SOFT - minY) * AI_ALT_PEN; // stay low: coming down from a high float is where shots get through
         if (plan === 'loopO' && v >= 90)
             v += AI_OVERHAND_BONUS;            // the overhand shot works in the look-ahead (its release scores or hits): prefer it to the other shots
-        vals[plan + (wv ? '+w' : '')] = v;
+        vals[plan + (wv ? '+w' : '') + (pd ? '+p' + pd : '')] = v;
         v += plan === hs0.plan ? (aiCanDash(me0, hs0) ? 6 : AI_STICK) : 0; // keep the current plan unless another is clearly better (without a dash to spend, nothing else would ever commit it, and it flip-flopped between plans every 0.15 s)
         if (v > bestV) {
             bestV = v;
             out.plan = plan;
             out.val = v;
             out.warp = wv;
+            out.plink = pd;
         }
     }
     // Nothing scores or hits anyone (usual without a dash) and 'hold' (0) beats every plan that merely tries: the AI stood still, timed out and dropped the ball at its own feet. Do the designed
@@ -1179,9 +1206,115 @@ const aiPlinkoSpot = me => {
     return aiLeft(me.team) ? off : W - off;
 };
 const aiWaitX = me => (AI_SPECIALS && me.has('plinko') && me.cd.plinko <= 0 && aiPlinkoWant(me) ? aiPlinkoSpot(me) : aiMid(me));
+// ---- PLINKO RICOCHET: a peg bounces whatever hits it along the contact normal at twice its speed (PAD_E, at least 500 u/s), so a peg dropped where a shot is going to pass is a mirror that can aim it.
+// She looks at where the free ball is going, tries a peg at each spot on the floor near her (with her pushed out left, right or up, like the real cast), plays the ball on through the peg and keeps the spot
+// when that is clearly better than doing nothing: the ball ends up hitting the player, going into their goal, or at least not into hers. Never when it would also hit her.
+const AI_RIC_REACH = 190, AI_RIC_STEP = 24, AI_RIC_MIN_GAIN = 150;
+function aiRicochetFind(me) {
+    if (ball.vx * ball.vx + ball.vy * ball.vy < 150 * 150 || me.casts.length)
+        return null;
+    const foes = aiFoes(me);
+    if (!foes.length)
+        return null;
+    const atk = aiGoalSign(me), fo = foes.reduce((m, q) => (!m || Math.hypot(q.x - ball.x, q.y - ball.y) < Math.hypot(m.x - ball.x, m.y - ball.y) ? q : m), null);
+    const path = [], b = Object.assign(new Ball(), ball), fx = snapshotFx();
+    for (let n = 0; n < 150; n++) {            // where the ball goes if nothing changes
+        path.push({ x: b.x, y: b.y });
+        if (b.step() !== null || aiInGoal(b))
+            break;
+    }
+    restoreFx(fx);
+    const v0 = aiRollWorld(atk, aiEnemySnap(me), Object.assign(new Ball(), ball), foes.map(aiEnemySnap));
+    let best = null;
+    const spots = [];                          // where a peg could go: right where we are (in the air too: the peg appears where the cast began), or on the floor within a short walk
+    spots.push({ x: me.x, y: me.y, dx: 0 });
+    if (me.ground)
+        for (let dx = -AI_RIC_REACH; dx <= AI_RIC_REACH; dx += AI_RIC_STEP)
+            if (Math.abs(dx) > 8)
+                spots.push({ x: me.x + dx, y: aiFloorY(me.x + dx) - me.r, dx });
+    for (const sp of spots) {
+        const px = sp.x, py = sp.y;
+        if ((px - NETX) * aiSide(me) > -PL * 1.5 || px < PL * 2 || px > W - PL * 2 || !aiSpotOk(px, Math.min(py, aiFloorY(px) - me.r - 9), me.r))
+            continue;                          // (our half only, and not against the net or a wall)
+        let when = -1;                         // the ball has to pass close enough to touch a peg there (and late enough for us to get there, cast and be out of the way)
+        for (let n = 0; n < path.length; n++)
+            if (Math.hypot(path[n].x - px, path[n].y - py) < ball.r + PEG_R + 4) { when = n; break; }
+        if (when < 0 || when * DT < 2 * Math.sqrt(Math.abs(sp.dx) / 185) + PLINKO_CAST + 0.15) // (she accelerates slowly: about 2 s for 170 u)
+            continue;
+        for (const [pk, ux, uy] of [['l', -1, 0], ['r', 1, 0], ['up', 0, -1], ['dn', 0, 1]]) {
+            const sx = px + ux * (me.r + PEG_R + 1), sy = py + uy * (me.r + PEG_R + 1);
+            if (!aiSpotOk(sx, Math.min(sy, aiFloorY(sx) - me.r - 9), me.r))
+                continue;
+            const peg = { x: px, y: py, vx: 0, vy: 0, r: PEG_R, team: me.team, owner: me, flash: 0, life: PEG_LIFE };
+            pegs.push(peg);
+            let v;
+            try { v = aiRollWorld(atk, { x: sx, y: sy, vx: 0, vy: 0, r: me.r, up: false }, Object.assign(new Ball(), ball), foes.map(aiEnemySnap)); }
+            finally { pegs.pop(); }
+            if (v - v0 >= AI_RIC_MIN_GAIN && v <= 0 && v0 <= -400)
+                v = aiRicReturn(peg, fo, sx, sy, me); // not a goal or a hit, but a shot that was going to hurt us now comes back at them: worth something (0 to 120)
+            if (v - v0 >= AI_RIC_MIN_GAIN && v > 0 && (!best || v > best.v))
+                best = { v, x: px, y: py, key: pk, when, air: !sp.dx && !me.ground };
+        }
+    }
+    return best;
+}
+// the ball comes off the peg fast and heading at the player (within about 30 degrees of the line to them): 60 to 120 (0 if it also hits us, or the peg does nothing)
+function aiRicReturn(peg, fo, sx, sy, me) {
+    const b = Object.assign(new Ball(), ball), fx = snapshotFx();
+    pegs.push(peg);
+    let out = 0, pv = Math.hypot(b.vx, b.vy);
+    try {
+        for (let n = 0; n < 110; n++) {
+            if (b.step() !== null)
+                break;
+            if (Math.hypot(b.x - sx, b.y - sy) < me.r + b.r + 4)
+                { out = 0; break; }
+            const v = Math.hypot(b.vx, b.vy);
+            if (v - pv > 120) {                // that was the peg
+                const ex = fo.x - b.x, ey = fo.y - b.y, el = Math.hypot(ex, ey) || 1, dot = (b.vx * ex + b.vy * ey) / (v * el);
+                out = dot > 0.85 ? 60 + Math.min(60, (v - 450) / 8) : 0;
+                break;
+            }
+            pv = v;
+        }
+    } finally { pegs.pop(); restoreFx(fx); }
+    return out;
+}
+function aiRicochetRun(me, A, k, S) { // walk to the spot, press plinko with the push direction held, then stay out of the way for a moment
+    S.t += DT;
+    if (me.cd.plinko > 0 || S.t > 1.6 || (!S.pressed && (me.onBall || Math.hypot(ball.vx, ball.vy) < 100))) {
+        A.sp = null;
+        A.spCool = 0.4;
+        return;
+    }
+    const dx = S.x - me.x;
+    if (S.pressed) {
+        if (S.t - S.pressed > 0.3) { A.sp = null; A.spCool = 0.3; }
+        return;
+    }
+    if ((me.ground || S.air) && Math.abs(dx) < 7) {
+        k.l = S.key === 'l'; k.r = S.key === 'r'; k.up = S.key === 'up'; k.dn = S.key === 'dn';
+        k[aiPlinkoKey(me)] = true;
+        S.pressed = S.t;
+        aiStats.ric = (aiStats.ric || 0) + 1;
+    } else {
+        k.r = dx > 7; k.l = dx < -7; k.up = false; k.dn = false;
+    }
+}
 function aiSpPlinko(me, A, k) {
     if (me.cd.plinko > 0 || me.onBall || me.casts.length)
         return;
+    if (AI_RICOCHET && ((A.ricT = (A.ricT || 0) - 1) <= 0)) {
+        A.ricT = 8;                            // (about fifteen looks a second)
+        const r = aiRicochetFind(me);
+        if (r) {
+            A.sp = { id: 'ric', t: 0, x: r.x, key: r.key, pressed: 0, air: r.air };
+            A.job = null;
+            return;
+        }
+    }
+    if (A.E || A.X || A.V)
+        return;                                // (the dodge peg and the standing spot are for when we are not in the middle of a jump)
     const f = aiForecast(ball), off = Math.max(0, aiTickN - f.stamp);
     if (f.path.length && (f.end === -aiGoalSign(me) || aiDodge(me, ball, me.r, W - me.r))) {
         let close = 1e9, at = null, when = 0;
@@ -1273,23 +1406,23 @@ function aiSpDecoyArrow(me, A, k) {
     if (me.onBall || me.rope || me.pending || me.casts.length)
         return;
     const close = Math.hypot(ball.x - me.x, ball.y - me.y) < 160 || aiPathMin(me, ball, 0, false, me.r, W - me.r) < AI_THREAT * 2; // (aiming roots us to the spot: not with the ball about to arrive)
-    const threat = aiForecast(ball).end === -aiGoalSign(me), mine = decoys.find(d => d.owner === me && !d.swarm);
+    const threat = aiForecast(ball).end === -aiGoalSign(me), mine = decoys.find(d => d.owner === me && !d.swarm), press = aiDcaPressure(me);
     A.dcaT = (A.dcaT || 0) - 1;
     if (me.cd.arrow <= 0 && A.dcaT <= 0 && !close) {
         A.dcaT = 8; // (a plan is a few dozen steps: fifteen times a second is plenty)
         let shot = mine ? aiDcaShot(me, mine) : null, at = 'decoy';
-        if (!shot || shot.cost > 2.2 || threat) { // the death ball itself: it is sent at them too (and it saves us when it is coming our way)
+        if (!shot || shot.cost > 2.2 || threat || press) { // the death ball itself: it is sent at them too (and it saves us when it is coming our way)
             const s2 = aiDcaShot(me, ball);
-            if (s2 && (!shot || s2.cost < shot.cost - 0.3 || shot.cost > 2.2)) { shot = s2; at = 'ball'; }
+            if (s2 && (!shot || press || s2.cost < shot.cost - 0.3 || shot.cost > 2.2)) { shot = s2; at = 'ball'; }
         }
-        if (shot && shot.cost < (threat ? 1.4 : 1.8)) {
+        if (shot && shot.cost < (threat || press ? 1.6 : 1.8)) {
             const key = aiKeyOf(me, 'arrow');
             k[key] = true;
             A.sp = { id: 'dca', t: 0, rp: 0.25, at, ang: shot.ang, ch: shot.ch, key };
             return;
         }
     }
-    if (me.cd.decoy <= 0 && me.ground && !close && !threat) { // a decoy every time one is ready (a new one replaces the old)
+    if (me.cd.decoy <= 0 && me.ground && !close && !threat && !press) { // a decoy every time one is ready (a new one replaces the old)
         k[aiKeyOf(me, 'decoy')] = true;
         A.spCool = 1;
     }
@@ -1319,6 +1452,59 @@ const aiDashSafe = (me, dir, dodge) => { // a dash goes ~300 u and keeps its spe
     const bd = Math.hypot(ball.x - me.x, ball.y - me.y), dest = me.x + dir * 300, bx = ball.x + ball.vx * 0.3, by = ball.y + ball.vy * 0.3, dd = Math.hypot(ball.x - dest, ball.y - me.y);
     return !(dd < Math.max(200, bd) && !(dodge && dd > bd)) && Math.hypot(bx - dest, by - me.y) >= 130 && !(dir * (ball.x - me.x) > 0 && Math.abs(ball.x - me.x) < 340 && Math.abs(ball.y - me.y) < 110 && !dodge);
 };
+// DASH EVADE: the free ball is going to hit us even if we run or jump as well as we can, so try the dashes (left / right, flat or up) in a rollout and take the one that clears it. She does not always do it:
+// each threat she rolls whether she sees it in time (SPEED OF LIGHT 80 %, a boss with a cooldown 60 %), so a shot that is well placed, or two in a row, can still get through. Returns true when it pressed the dash.
+const AI_EVADE_STEPS = 84, AI_EVADE_SEE = { sol: 0.8, other: 0.6 };
+function aiDashEvade(me, A, k) {
+    if (me.dashSlot() < 0 || me.onBall || me.casts.length || me.stunT > 0 || !me.alive)
+        return false;
+    const b = AIB, bd = Math.hypot(b.x - me.x, b.y - me.y);
+    A.evT = Math.max(0, (A.evT || 0) - DT * (A.spT > 0 ? 3 : 1));
+    if (bd > 650 || bd < 100 || (me.tball === b) || players.some(q => q.team !== me.team && q.alive && q.onBall && q.tball === b))
+        return false;
+    if (aiPathMin(me, b, 0, false, me.r, W - me.r) >= AI_THREAT * 1.4 && aiPathMin(me, b, 0, true, me.r, W - me.r) >= AI_THREAT * 1.4 && !A.evHot)
+        return false;
+    const sol = me.dashMin === 0 && AI_SPEED_OF_LIGHT;
+    if (A.evT <= 0) { // a new threat: does she see it?
+        A.evT = 1.2;
+        A.evSees = Math.random() < (sol ? AI_EVADE_SEE.sol : AI_EVADE_SEE.other);
+    }
+    A.evHot = false;
+    if (!A.evSees)
+        return false;
+    const lo = me.r, hi = W - me.r, dd = aiDodge(me, b, lo, hi), need = me.r + b.r + 14;
+    const run = (dash, dir, up, steps) => { // the closest the ball gets over the next steps, with this dash then the plain dodge (or nothing)
+        const S = aiSimNew(me);
+        let min = 1e9, sc = null;
+        for (let i = 0; i < steps; i++) {
+            const kk = aiNoKeys();
+            if (dash && i === 0) { kk[aiDashKey(me)] = true; kk.r = dir > 0; kk.l = dir < 0; kk.up = up; }
+            else if (dd) { kk.r = dd.dir > 0; kk.l = dd.dir < 0; kk.up = dd.up; }
+            sc = aiSimStep(S, kk);
+            min = Math.min(min, aiGap(S));
+            if (aiDead(S) || sc !== null)
+                break;
+        }
+        return min;
+    };
+    const base = run(false, 0, false, AI_EVADE_STEPS);
+    if (base > need)
+        return false;                              // the plain dodge already clears it: save the dash
+    let best = null, bestM = base;
+    for (const dir of [-1, 1])
+        for (const up of [false, true]) {
+            if (!aiSpotOk(me.x + dir * 300, me.y + (up ? -120 : 0), me.r))
+                continue;
+            const m = run(true, dir, up, AI_EVADE_STEPS);
+            if (m > bestM + 6) { bestM = m; best = { dir, up }; }
+        }
+    if (!best || bestM <= me.r + b.r + 2)
+        return false;
+    k[aiDashKey(me)] = true; k.r = best.dir > 0; k.l = best.dir < 0; k.up = best.up; k.dn = false;
+    A.spCool = sol ? 0.15 : 0.4;
+    A.evHot = true; // she is dodging this one: look again next tick
+    return true;
+}
 function aiSpDash(me, A, k) {
     if (me.dashSlot() >= 0 && !me.onBall && !me.casts.length && ball.vy > 250 && ball.vy > 1.5 * Math.abs(ball.vx) && (ball.x - NETX) * aiSide(me) < 60) { // a steep shot is coming down on our half: it will land and roll to our goal, so dash back past where it lands and meet it there
         const g = -aiSide(me), f = aiForecast();
@@ -2033,6 +2219,8 @@ function aiSpecialRun(me, A, k) {
         aiDcaRun(me, A, k, S);
     else if (S.id === 'arrow')
         aiArrowRun(me, A, k, S);
+    else if (S.id === 'ric')
+        aiRicochetRun(me, A, k, S);
     else if (S.id === 'sweep')
         aiSweepRun(me, A, k, S);
     else if (S.id === 'bat')
@@ -2053,7 +2241,11 @@ function aiSpecial(me, A, k) {
         A.aw = null;
     if (A.sp) { aiSpecialRun(me, A, k); return; }
     const id = A.combo === 'decoyArrow' && me.has('decoy') && me.has('arrow') ? 'decoyArrow' : A.combo === 'transmit' && me.has('explode') && me.has('warp') ? 'transmit' : A.combo === 'sweep' && me.has('marionette') && me.has('bat') ? 'sweep' : me.slots()[0][1]; // (a campaign boss with both plays them as one plan)
-    const busy = (A.E || A.X || A.V) && id !== 'explode' && id !== 'transmit' && id !== 'sweep' && id !== 'bat'; // a committed jump is in flight; a look-ahead is not. (A blast or a swing may go off mid-jump: that is what the jump is for)
+    const busy = (A.E || A.X || A.V) && id !== 'explode' && id !== 'transmit' && id !== 'sweep' && id !== 'bat' && id !== 'plinko'; // a committed jump is in flight; a look-ahead is not. (A blast or a swing may go off mid-jump: that is what the jump is for)
+    if (id === 'dash' && !A.sp && (A.spCool <= 0 || A.evHot) && aiDashEvade(me, A, k)) { // a dash that gets us out of the ball's way beats any plan we were in the middle of
+        A.job = null;
+        return;
+    }
     if (A.spCool > 0 || busy || (A.spT = (A.spT || 0) - 1) > 0)
         return;
 
@@ -2419,6 +2611,7 @@ function aiDrive(i) {
                 if (A.job.out.plan) {
                     hs.plan = A.job.out.plan;
                     hs.warp = !!A.job.out.warp;
+                    hs.plink = A.job.out.plink || null;
                 }
                 if (!A.job.out.race && A.job.out.val >= AI_COMMIT_V && !aiCanDash(me, hs) && /^(shoot|sling|loop)/.test(hs.plan))
                     hs.commit = true;           // a shot that works in the look-ahead, and no dash to commit us: stop second-guessing it
@@ -2430,6 +2623,8 @@ function aiDrive(i) {
         aiHeldKeys(me, AIB, hs, k);
         if (me.tball !== ball && aiPathMin(me, ball, 0, false, me.r, W - me.r) < me.r + ball.r + 12)
             k.z = false;                       // holding a decoy while the DEATH ball is about to reach us: let go and dodge
+        else if (me.tball !== ball && A.combo === 'decoyArrow' && hs.t > 0.35 && aiDcaPressure(me) && !(aiFlight(me.tball, me.team) || aiBallHit(me.tball, me) >= AI_HIT_MIN))
+            k.z = false;                       // stage 5: they are shooting on us and our decoy swing is not about to land: drop it and go and defend
         if (me.tball === AIB && players.some(q => q.team !== me.team && q.alive && q.onBall && q.tball === AIB)) { // tug of war: an enemy has it too
             hs.tug = (hs.tug || 0) + DT;
             if (hs.patience === undefined)

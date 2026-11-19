@@ -1,4 +1,4 @@
-// RENDER - the campaign's loadout draft (3 specials to choose from, before stage 1 and again before stage 2) and the banner that opens every stage. Display only.
+// RENDER - the campaign's loadout draft (3 specials to choose from, before stage 1 and again before stage 3) and the banner that opens every stage. Display only.
 // Everything comes from `campaign` (game/campaign.js): the draft's own sim timers (draft.t, draft.lock) and bannerT drive the animation, never the wall clock, so it is the same frame
 // everywhere. (Only the little pulse on the highlighted card uses performance.now, like the pick screen's badges.) Needs drawBanner / PICK_DESC from pick-screen.js and iconGlyph.
 function campaignNetText(s) { // a short line for the net of a stage

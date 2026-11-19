@@ -10,6 +10,7 @@ Assumes 16 steps (16th notes) per bar, same as the game. Each note is written as
 [step within the bar (0-15), midi note, length in steps], one bar per line.
 """
 import struct, sys
+sys.stdout.reconfigure(encoding='utf-8')
 
 STEPS_PER_BAR = 16
 
