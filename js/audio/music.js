@@ -17,7 +17,7 @@ const Music = (() => {
     // A stage with no song falls back to mainTheme. List every song you have in THEME_FILES (that stops the game asking for files that are not there).
     const THEME_DIR = 'js/audio/themes/';
     const THEME_MAIN = 'mainTheme';
-    const THEME_FILES = ['mainTheme', 'c1s5', 'c1s6'];
+    const THEME_FILES = ['mainTheme', 'c1s4', 'c1s5', 'c1s6'];
     const THEME_EXT = ['js', 'mp3', 'ogg', 'wav', 'm4a'];
     let song = typeof SONG !== 'undefined' ? SONG : null;   // the song the synth plays (the built-in one from song-data.js until a theme loads)
     let BPM = 130, STEP = 60 / 130 / 4;          // one 16th note, in seconds (BPM comes from the BeepBox file)
