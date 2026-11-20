@@ -394,10 +394,16 @@ if (onlineBtn)
             location.href = location.pathname; // simplest way back to offline play: a fresh page
             return;
         }
-        const room = (prompt('Room name (letters, numbers, - and _). Share it with a friend so they join the same room:', 'test') || '').trim();
-        if (/^[A-Za-z0-9_-]{1,24}$/.test(room))
-            net.join(room);
-        cv.focus();
+        const go = room => {
+            room = (room || '').trim();
+            if (/^[A-Za-z0-9_-]{1,24}$/.test(room))
+                net.join(room);
+            cv.focus();
+        };
+        if (typeof gameDialog !== 'undefined')
+            gameDialog.ask({ title: 'Join a room', text: 'Room name (letters, numbers, - and _). Share it with a friend so they join the same room.', ok: 'Join', input: { value: 'test', max: 24, pattern: /^[A-Za-z0-9_-]{1,24}$/ } }).then(go);
+        else
+            go(prompt('Room name (letters, numbers, - and _). Share it with a friend so they join the same room:', 'test'));
     });
 {
     const room = new URLSearchParams(location.search).get('room');

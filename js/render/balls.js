@@ -1,24 +1,25 @@
 // RENDER - the death ball (and decoys, which look the same), the marionette pull effect, and the round / match banner. Read-only on game state.
-function drawBall(b) { // the Death Ball sprite (decoys use it too)
+function drawBall(b) { // the Death Ball sprite (decoys use it too): a glowing purple disc with two black squares centered in it (one turned 45 degrees) - their corners reach almost to the rim, so the purple is left as 8 wedges between 8 black spikes; it spins with the ball
     const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 260); // slow glow pulse
-    const bgr = cx.createRadialGradient(b.x - 4, b.y - 4, 1, b.x, b.y, b.r);
-    bgr.addColorStop(0, '#000000');
-    bgr.addColorStop(1, '#000000');
-    cx.fillStyle = bgr;
-    cx.strokeStyle = '#b36bff';
-    cx.lineWidth = 3;
-    cx.shadowColor = '#000000';
-    cx.shadowBlur = 16 + 12 * pulse;
+    const R = b.r * 0.97;                                         // how far a black spike reaches (half the squares' diagonal)
+    cx.save();
+    cx.translate(b.x, b.y);
+    cx.shadowColor = '#b36bff';
+    cx.shadowBlur = 12 + 12 * pulse;
+    cx.fillStyle = '#a04bf0';
     cx.beginPath();
-    cx.arc(b.x, b.y, b.r, 0, 7);
+    cx.arc(0, 0, b.r, 0, 7);
     cx.fill();
-    cx.stroke();
     cx.shadowBlur = 0;
-    cx.strokeStyle = 'rgba(235,215,255,.9)';
-    cx.lineWidth = 2;
-    cx.beginPath(); // spin marker
-    line(b.x, b.y, b.x + Math.cos(b.th) * b.r, b.y + Math.sin(b.th) * b.r);
-    cx.stroke();
+    cx.fillStyle = '#000';
+    for (let q = 0; q < 2; q++) {                                 // the two squares
+        const h = R / Math.SQRT2;                                 // (a square of half-side h has its corners R from the center)
+        cx.save();
+        cx.rotate(b.th + q * Math.PI / 4);
+        cx.fillRect(-h, -h, 2 * h, 2 * h);
+        cx.restore();
+    }
+    cx.restore();
 }
 function drawPull(b) { // marionette: a ring and streaks in the caster's color behind the ball, fading over MARIONETTE_FX
     const q = b.pull;

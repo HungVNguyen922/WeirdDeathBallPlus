@@ -208,11 +208,11 @@ const BALL_FLICK_MAX = 150;  // most spin (rad/s) one release can add
 // --- The tether: grappling the ball (or a decoy) ------------------------------------------------------------------------------------------------------------------
 // Same elastic rope as on platforms (progressive spring, firmer with weight) but much stiffer, so the stretch stays small and the maximum length is enforced. Inside
 // that length the rope is slack and does nothing: the ball and the player can move toward each other freely.
-const KB = 150;                       // tether stiffness (the ball's version of KS). Higher = the leash is harder
-const DB = 0.5;                       // tether damping while it is being stretched (the ball's version of DAMP)
-const BALL_RIGID = 0.25;               // share of the outward speed the rope cancels outright; the spring takes the rest. 1 = a hard rod, 0 = pure spring
-const BALL_PULL = 0.25;                // share of the tether's pull the PLAYER feels (1 = the original, 0 = a weightless ball you cannot be dragged by). The ball always feels all of it
-const BALL_TM = 0.25;                  // ball mass as the tether sees it (higher = the rope moves the ball less and you more)
+const KB = 200;                       // tether stiffness (the ball's version of KS). Higher = the leash is harder
+const DB = 0.25;                       // tether damping while it is being stretched (the ball's version of DAMP)
+const BALL_RIGID = 0.5;               // share of the outward speed the rope cancels outright; the spring takes the rest. 1 = a hard rod, 0 = pure spring
+const BALL_PULL = 0.5;                   // share of the tether's pull the PLAYER feels, against the ball's 1/BALL_TM. 1 = equal and opposite (momentum conserved): you and the ball orbit each other like two bodies under gravity. 0.25 was the old "ball circles a fixed post" feel; 0 = a weightless ball you cannot be dragged by
+const BALL_TM = 0.5;                  // ball mass as the tether sees it (higher = the rope moves the ball less and you more)
 
 // =====================================================================================================================================================================
 // 9  COLLISIONS

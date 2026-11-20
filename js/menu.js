@@ -3,6 +3,102 @@
 // It is opened from the Menu tile on Blue's wall (drawn in render/special-menu.js, clicked in input.js) or with Esc, and closed with the X, a click on the backdrop, or Esc.
 // Pure page UI: the buttons inside it are the same ones input.js, music.js and net/client.js already find by id (ai0..ai3, mode2v2, music, online), so nothing else changes.
 // Load after the other scripts (touch.js too), before main.js.
+// DIALOG - an in-game replacement for confirm() / prompt(): a small card in the menu's look that is steered like the menu (arrows / WASD move between its buttons, Enter, Space or the
+// grapple key press the lit one, Esc cancels, a text box keeps its own keys). gameDialog.ask({ title, text, ok, cancel, input, focus }) -> Promise: for a plain question true / false, with
+// `input: { value, max, pattern }` the typed text (or null when cancelled). `focus: 'cancel'` starts on Cancel (use it for anything destructive).
+const gameDialog = (() => {
+    const css = document.createElement('style');
+    css.textContent = '#gdlg{z-index:30}#gdlg .dialog{max-width:440px;width:100%;text-align:center;padding:16px 22px 20px}#gdlg h2{margin:0 0 8px;font:italic 800 26px/1.1 system-ui,sans-serif;color:#fff;text-shadow:-2px -2px 0 #000,2px -2px 0 #000,-2px 2px 0 #000,2px 2px 0 #000,0 3px 0 #000}' +
+        '#gdlg p{margin:0 0 14px;color:#d8d2e8;font:600 15px/1.45 system-ui,sans-serif}#gdlg input{box-sizing:border-box;width:100%;margin:0 0 14px;padding:9px 12px;border-radius:12px;border:2px solid #4b2f7a;background:#12081f;color:#fff;font:700 16px system-ui,sans-serif;text-align:center}' +
+        '#gdlg input:focus{outline:0;border-color:#42a5f5;box-shadow:0 0 0 2px rgba(66,165,245,.28)}#gdlg input.bad{border-color:#ef5350}#gdlg .btns{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}#gdlg .btns button{min-width:110px;font-size:15px}#gdlg .hint2{margin:12px 0 0;font:700 11px system-ui,sans-serif;letter-spacing:.06em;color:#98a2ad;text-transform:uppercase}';
+    document.head.appendChild(css);
+    const el = document.createElement('div');
+    el.id = 'gdlg';
+    el.className = 'overlay';
+    el.hidden = true;
+    el.innerHTML = '<div class="dialog" role="alertdialog" aria-modal="true"><h2></h2><p></p><input type="text" autocomplete="off" spellcheck="false" hidden><div class="btns"><button type="button" data-r="ok"></button><button type="button" data-r="cancel"></button></div><div class="hint2">Arrows move &middot; Enter picks &middot; Esc cancels</div></div>';
+    document.body.appendChild(el);
+    const [hEl, pEl, inEl, btns] = [el.querySelector('h2'), el.querySelector('p'), el.querySelector('input'), el.querySelector('.btns')];
+    const okB = btns.querySelector('[data-r=ok]'), noB = btns.querySelector('[data-r=cancel]');
+    let cur = null, prevFocus = null;
+    const items = () => [inEl, okB, noB].filter(x => !x.hidden);
+    function finish(yes) {
+        if (!cur)
+            return;
+        const c = cur, v = inEl.value.trim();
+        if (yes && c.opts.input && c.opts.input.pattern && !c.opts.input.pattern.test(v)) { // not a valid entry: stay open and say so
+            inEl.classList.add('bad');
+            inEl.focus();
+            return;
+        }
+        cur = null;
+        el.hidden = true;
+        if (prevFocus && prevFocus.focus && document.contains(prevFocus))
+            prevFocus.focus({ preventScroll: true });
+        c.resolve(c.opts.input ? (yes ? v : null) : !!yes);
+    }
+    btns.addEventListener('click', e => { const b = e.target.closest('button'); if (b) finish(b.dataset.r === 'ok'); });
+    el.addEventListener('click', e => { if (e.target === el) finish(false); }); // the dark backdrop cancels
+    inEl.addEventListener('input', () => inEl.classList.remove('bad'));
+    window.addEventListener('keydown', e => {
+        if (!cur)
+            return;
+        e.stopImmediatePropagation(); // nothing behind the card (the menu, the game) hears any key while it is up
+        const typing = document.activeElement === inEl;
+        if (e.key === 'Escape') { e.preventDefault(); if (!e.repeat) finish(false); return; }
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            if (e.repeat) return;
+            const a = document.activeElement;
+            finish(typing ? true : a === noB ? false : a === okB ? true : true);
+            return;
+        }
+        const dir = { ArrowUp: -1, ArrowLeft: -1, ArrowDown: 1, ArrowRight: 1, Tab: e.shiftKey ? -1 : 1 }[e.key] || (!typing && ({ w: -1, a: -1, s: 1, d: 1 }[e.key.toLowerCase()])) || 0;
+        if (typing && (e.key === 'ArrowLeft' || e.key === 'ArrowRight'))
+            return; // moving the caret
+        if (dir) {
+            e.preventDefault();
+            const list = items(), i = list.indexOf(document.activeElement);
+            list[(i + dir + list.length) % list.length].focus({ preventScroll: true });
+            return;
+        }
+        const grapple = typeof keybinds !== 'undefined' && keybinds.map[0] && typeof keyToken === 'function' && keyToken(e) === keybinds.map[0].z;
+        if (!typing && grapple && !e.repeat && document.activeElement && document.activeElement.tagName === 'BUTTON') {
+            e.preventDefault();
+            document.activeElement.click();
+        }
+    }, true);
+    function ask(opts) {
+        if (cur)
+            finish(false);
+        opts = opts || {};
+        prevFocus = document.activeElement;
+        hEl.textContent = opts.title || '';
+        hEl.hidden = !opts.title;
+        pEl.textContent = opts.text || '';
+        pEl.hidden = !opts.text;
+        okB.textContent = opts.ok || 'OK';
+        noB.textContent = opts.cancel || 'Cancel';
+        inEl.hidden = !opts.input;
+        inEl.classList.remove('bad');
+        if (opts.input) {
+            inEl.value = opts.input.value || '';
+            inEl.maxLength = opts.input.max || 60;
+        }
+        el.hidden = false;
+        if (typeof touch !== 'undefined' && touch.releaseAll)
+            touch.releaseAll();
+        return new Promise(resolve => {
+            cur = { opts, resolve };
+            const f = opts.input ? inEl : opts.focus === 'cancel' ? noB : okB;
+            f.focus({ preventScroll: true });
+            if (opts.input)
+                inEl.select();
+        });
+    }
+    return { ask, isOpen: () => !!cur };
+})();
+
 const gameMenu = (() => {
     const menu = document.getElementById('menu'), canvas = document.getElementById('c'), pickEl = document.getElementById('specialpick'), pickBtn = document.getElementById('pickmode'), rosterEl = document.getElementById('roster');
     if (!menu)
@@ -264,9 +360,16 @@ const gameMenu = (() => {
             if (net.on)
                 return;
             if (campaign.on) {
-                if (!confirm('Quit the campaign? The run is lost.'))
-                    return;
-                campaignStop(true);
+                gameDialog.ask({ title: 'Quit the campaign?', text: 'The run is lost.', ok: 'Quit', cancel: 'Keep playing', focus: 'cancel' }).then(yes => {
+                    if (!yes)
+                        return;
+                    campaignStop(true);
+                    labelCamp();
+                    labelTwo();
+                    labelSwap();
+                    labelPick();
+                });
+                return;
             }
             else if (campaignHome.on)
                 campaignHomeClose();

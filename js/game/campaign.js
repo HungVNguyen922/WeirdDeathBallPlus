@@ -28,7 +28,7 @@ const CAMPAIGN_STAGES = [
     // combo: a combined AI plan for her two specials ('decoyArrow', 'transmit' = stage 4's instant transmission, 'sweep' = stage 6's volleying).
     { name: 'Stage 1', boss: 'Boss 1', goal: 5, time: 60, gap: 6 * PL, special: 'dash', plunge: 120, lvl: 0.5, skin: CAMPAIGN_SKINS[0] },
     { name: 'Stage 2', boss: 'Boss 2', goal: 5, time: 90, gap: 6 * PL, special: 'plinko', plinkoBoost: true, lvl: 0.6, skin: CAMPAIGN_SKINS[1] },
-    { name: 'Stage 3', boss: 'Boss 3', goal: 7, time: 120, gap: 4 * PL, special: 'dash', dashes: 2, gimmick: 'dashCut', speedAt: 5, plunge: 120, lvl: 0.7, skin: CAMPAIGN_SKINS[2] },
+    { name: 'Stage 3', boss: 'Boss 3', goal: 7, time: 120, gap: 4 * PL, special: 'dash', dashes: 2, gimmick: 'dashCut', speedAt: 4, plunge: 120, lvl: 0.7, skin: CAMPAIGN_SKINS[2] },
     { name: 'Stage 4', boss: 'Boss 4', goal: 7, time: 180, gap: 4 * PL, special: 'explode', special2: 'warp', combo: 'transmit', explodeCd: 3, drive: 100, lvl: 0.8, skin: CAMPAIGN_SKINS[3] },
     { name: 'Stage 5', boss: 'Boss 5', goal: 7, time: 210, gap: 4 * PL, special: 'decoy', special2: 'arrow', arrows: 5, arrowSend: 700, combo: 'decoyArrow', drive: 100, lvl: 0.9, skin: CAMPAIGN_SKINS[4] },
     { name: 'Stage 6', boss: 'Boss 6', goal: 9, gap: 4 * PL, special: 'marionette', special2: 'bat', combo: 'sweep', sweep: 100, lvl: 1, skin: CAMPAIGN_SKINS[5], swarm: { first: 6, every: 9, max: 4, life: 30 } },
@@ -330,8 +330,14 @@ function campaignSwarmTick() {
 }
 function campaignInvTick() {
     for (const p of players)
-        if (p.invT > 0)
+        if (p.invT > 0) {
             p.invT = Math.max(0, p.invT - DT);
+            if (p.invT < 0.3 && (p.invHold || 0) < 4 && decoys.some(d => d.team !== p.team && Math.hypot(d.x - p.x, d.y - p.y) < 170)) { // an enemy decoy still parked on top of the spawn: stay unkillable a little longer (at most 4 s) instead of being spawn-killed the moment the second ends
+                p.invT = 0.3;
+                p.invHold = (p.invHold || 0) + DT;
+            }
+        } else
+            p.invHold = 0;
 }
 // A point that does not end the stage: no pause, no new round. The ball respawns, whoever was killed comes back at their spawn, everything else carries on.
 function campaignRespawn() {

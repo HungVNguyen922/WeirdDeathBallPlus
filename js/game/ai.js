@@ -237,6 +237,7 @@ function aiPathMin(me, b, dir, up, lo, hi) {
 // There can be several balls on the field: the death ball and any decoys. A decoy scores like the death ball but never kills. Every prediction and look-ahead below works on ONE body, AIB:
 // the one we are tethered to, else the one that will reach our goal soonest, else (if the death ball is not on our half) the nearest decoy on our half, else the death ball. The death ball is the only
 // thing that can kill us, so the dodge always watches it, whatever AIB is.
+const AI_DECOY_DODGE = true;               // an enemy decoy kills on touch: dodge it like the death ball
 const AI_DECOYS = true;                    // false = decoys are ignored, like before
 const AI_TEAMWORK = true;                  // 2v2: only the teammate best placed for a ball goes for it; the other stays clear (false = both pile in, like before)
 const AI_SUPPORT_GAP = 140;                // u: the player giving way to a teammate holds position this far behind them (towards our goal) instead of freezing
@@ -623,7 +624,7 @@ function aiHeldKeys(me, b, hs, k) {
         hs.dashT = hs.t;
         hs.nd = (hs.nd || 0) + 1;
     }
-    else if (AI_LOOP_DASH && loop && (hs.dashT === null || sol) && hs.t >= 0.3 && aiCanDash(me, hs)) { // dash along the orbit's tangent to keep the loop fast
+    else if (AI_LOOP_DASH && loop && (hs.dashT === null || sol) && hs.t >= (sol ? 0.12 : 0.3) && aiCanDash(me, hs)) { // dash along the orbit's tangent to keep the loop fast
         const rx = me.x - tb.x, ry = me.y - tb.y, d = Math.hypot(rx, ry) || 1, sp = plan === 'loopO' ? s : -s, tx = sp * -ry / d, ty = sp * rx / d;
         k[aiDashKey(me)] = true; k.r = tx > 0.3; k.l = tx < -0.3; k.up = ty < -0.3; k.dn = ty > 0.3;
         hs.dashT = hs.t;
@@ -2550,10 +2551,18 @@ function aiFree(i, me, A, k) { // keys for an AI that is not tethered
         A.job = { kind: 'jump', gen: aiJumpJob(me, { ...k }, [AI_PRE], ['toward', 'none', 'away'], A.out, dx * s > 20 ? AI_OVERHAND_TAPS : AI_LOW ? [0, 2, 4] : [2, 4, 0], true), out: A.out, frozen: { ...k }, age: 0, done: false };
         return;
     }
-    const dodge = aiDodge(me, ball, lo, hi);    // the DEATH ball is going to reach us: pick the steering that keeps us furthest from it (a decoy cannot kill us: never dodge one)
+    let dodge = aiDodge(me, ball, lo, hi);    // the DEATH ball is going to reach us: pick the steering that keeps us furthest from it (our OWN decoys are harmless, but the enemy's kill on touch: see below)
+    const dodgeBall = dodge;
+    if (!dodge && AI_DECOY_DODGE) {            // an enemy decoy is solid and kills like the ball: steer clear of the one that will reach us first
+        let best = null, bd = 1e9;
+        for (const d of decoys)
+            if (d.team !== me.team && Math.hypot(d.x - me.x, d.y - me.y) < bd) { bd = Math.hypot(d.x - me.x, d.y - me.y); best = d; }
+        if (best && !(me.invT > 0))
+            dodge = aiDodge(me, best, lo, hi);
+    }
     // In the air with the ball about to be where we come down (a slow ball creeping under us, or one rolling at our landing spot): we cannot steer out of it for ever, and the grapple only
     // grabs the nearest thing, so if the ball is that, grab it NOW and let the held plans (which look ahead for a safe release) decide what to do with it.
-    if (!me.ground && grip && (A.cool <= 0 || b !== A.heldBody) && mine && (b === ball ? dodge : aiUrgent(me))) {
+    if (!me.ground && grip && (A.cool <= 0 || b !== A.heldBody) && mine && (b === ball ? dodgeBall : aiUrgent(me))) {
         const gd = Math.hypot(dx, b.y - me.y);
         if (gd < RANGE - 15 && gd > me.r + b.r + 6) {
             const near = aiNearest(me, b);
@@ -2574,6 +2583,39 @@ function aiFree(i, me, A, k) { // keys for an AI that is not tethered
         k.l = dodge.dir < 0;
         k.r = dodge.dir > 0;
         k.up = dodge.up;
+    }
+}
+// An ENEMY decoy is solid and kills on touch, and none of the plans above (jobs, held swings, specials) look at it: they would walk, hop or swing straight into one. This runs last and overrides
+// the movement keys: steer out of its way, let go of whatever we hold if it is about to hit us, and dash clear when it is close.
+function aiDecoyReflex(me, A, k) {
+    A.dcCool = Math.max(0, (A.dcCool || 0) - DT);
+    if (!AI_DECOY_DODGE || me.invT > 0 || me.stunT > 0 || me.awakeT > 0)
+        return;
+    let d = null, bd = 1e9;
+    for (const q of decoys) {
+        const dist = Math.hypot(q.x - me.x, q.y - me.y);
+        if (q.team !== me.team && dist < bd) { bd = dist; d = q; }
+    }
+    if (!d || bd > 380)
+        return;
+    const lo = me.r, hi = W - me.r, intent = (k.r ? 1 : 0) - (k.l ? 1 : 0);
+    if (aiPathMin(me, d, intent, !!k.up, lo, hi) >= AI_THREAT)
+        return;                                // what we were going to do is fine
+    let dg = null, bestD = -1;                 // otherwise the steering that keeps us furthest from it
+    for (const dir of [0, -1, 1])
+        for (const up of [false, true]) {
+            const m = aiPathMin(me, d, dir, up, lo, hi) + (dir === intent ? 6 : 0);
+            if (m > bestD) { bestD = m; dg = { dir, up }; }
+        }
+    if (me.onBall)
+        k.z = false;                           // (the rope would keep us in its path)
+    k.l = dg.dir < 0; k.r = dg.dir > 0; k.up = dg.up;
+    if (bd < 240 && A.dcCool <= 0 && me.dashSlot() >= 0 && !me.casts.length && !me.onBall) {
+        const dir = dg.dir || (me.x >= d.x ? 1 : -1);
+        if (aiSpotOk(me.x + dir * 300, me.y, me.r)) {
+            k[aiDashKey(me)] = true; k.r = dir > 0; k.l = dir < 0; k.up = false; k.dn = false;
+            A.dcCool = 0.5;
+        }
     }
 }
 function aiDrive(i) {
@@ -2645,6 +2687,7 @@ function aiDrive(i) {
         aiFree(i, me, A, k);
     }
     if (AI_SPECIALS) aiSpecial(me, A, k);
+    aiDecoyReflex(me, A, k);
     Object.assign(me.keys, aiLag(A, k));
 }
 // Reaction delay: A.lvl (0..1, default 1 = none) is how sharp this computer player is. Below 1 it acts on what it decided a few ticks ago (up to AI_LAG_MAX ticks at lvl 0), which

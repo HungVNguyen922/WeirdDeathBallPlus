@@ -205,8 +205,8 @@ console.log('SPAWN PROTECTION, SPREAD ARROWS, THE DECOY + ARROW BOSS');
     s.run('update()');
     check(s.run('players[0].alive'), 'a decoy sitting on their spawn does not kill them during it');
     let died = -1;
-    for (let i = 0; i < 120 * 2 && died < 0; i++) { s.run('players[0].x = decoys[0].x; players[0].y = decoys[0].y; update()'); if (s.run('score[1] > 0')) died = i; }
-    check(died > 100 && died < 140, 'and it kills them once the protection runs out (after ' + died + ' ticks)');
+    for (let i = 0; i < 120 * 7 && died < 0; i++) { s.run('players[0].x = decoys[0].x; players[0].y = decoys[0].y; update()'); if (s.run('score[1] > 0')) died = i; }
+    check(died > 100 && died < 120 * 5.5, 'and it kills them once the protection runs out (a decoy parked on the spawn extends it, capped at 4 s: after ' + died + ' ticks)');
     const t = loadSim();
     t.run('resetMatch()');
     check(t.run('players.every(p => p.invT === 0)'), 'outside the campaign nobody is ever protected');
@@ -359,10 +359,10 @@ console.log('CAMPAIGN 1 STAGE TABLE, CLOCK AND SCORING');
     check(t.run('campaign.newHi') === false && t.run('campaignHi(CAMPAIGN_LIST[0].id)') === 900, 'a worse one is not');
     // speed of light
     t = loadSim();
-    t.run('campaignStart(); campaign.stage = 2; campaignApply(); resetMatch(); campaign.draft.on = false; campaign.bannerT = 0; pick.on = false; pause = 0; score = [4, 0]; campaignOnPoint(1, "scores!")');
+    t.run('campaignStart(); campaign.stage = 2; campaignApply(); resetMatch(); campaign.draft.on = false; campaign.bannerT = 0; pick.on = false; pause = 0; score = [3, 0]; campaignOnPoint(1, "scores!")');
     check(t.run('allPlayers[1].dashCut[0] + allPlayers[1].dashCut[1]') > 0 && t.run('allPlayers[1].dashMin') === 0.5, 'stage 3: every point either way shortens one of her dashes');
-    t.run('score = [5, 0]; campaignOnPoint(0, "scores!")');
-    check(t.run('allPlayers[1].dashMin') === 0 && t.run('allPlayers[1].cd.dash') === 0 && t.run('allPlayers[1].cd.dash2') === 0, 'player on 5 points: SPEED OF LIGHT, her dashes have no cooldown');
+    t.run('score = [4, 0]; campaignOnPoint(0, "scores!")');
+    check(t.run('allPlayers[1].dashMin') === 0 && t.run('allPlayers[1].cd.dash') === 0 && t.run('allPlayers[1].cd.dash2') === 0, 'player on 4 points: SPEED OF LIGHT, her dashes have no cooldown');
     t.run('const c0 = allPlayers[1].dashCut.slice(); campaignOnPoint(1, "scores!"); var same = JSON.stringify(c0) === JSON.stringify(allPlayers[1].dashCut)');
     check(t.run('same') && t.run('allPlayers[1].dashMin') === 0, 'and it stays that way');
 }

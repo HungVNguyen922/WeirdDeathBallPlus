@@ -22,10 +22,10 @@ const PAD_D1 = OUT_D; // the hatchet runs all the way down to the threshold line
 const PAD_LEN = (PAD_D1 - PAD_D0) / Math.cos(PAD_ANG); // plate length (follows from the two distances above)
 const PAD_E = 2, PAD_KICK = 500, PAD_MAX = 1200, PAD_BOOST_T = 5; // bounce gain, minimum / maximum launch speed; the ball may exceed its normal speed cap right after a hatchet hit, easing back over PAD_BOOST_T seconds // bounce gain (>1 = adds energy), minimum launch speed, cap, and the softest hit that still triggers it (u/s)
 // Hatchet: the ball is mirrored off the plate (so it keeps its arc), then the whole velocity is multiplied. Pegs keep PAD_E / PAD_KICK.
-const HATCHET_BOOST = 1.8;     // speed multiplier at a full-strength hit (1 = a plain mirror bounce, no extra power)
-const HATCHET_BOOST_V = 600;   // impact speed into the plate (u/s) that gets the full boost; softer hits get less
-const HATCHET_NORMAL_E = 0.75;    // restitution of the mirror part (1 = same angle out as in; raise it to push the exit toward the plate's normal, 3 = the old behaviour)
-const HATCHET_EXIT_N = 220;    // slowest the ball may leave the plate along its normal (u/s), so grazing hits still pop off
+const HATCHET_BOOST = 1.5;     // speed multiplier at a full-strength hit (1 = a plain mirror bounce, no extra power)
+const HATCHET_BOOST_V = 400;   // impact speed into the plate (u/s) that gets the full boost; softer hits get less
+const HATCHET_NORMAL_E = 1;    // restitution of the mirror part (1 = same angle out as in; raise it to push the exit toward the plate's normal, 3 = the old behaviour)
+const HATCHET_EXIT_N = 150;    // slowest the ball may leave the plate along its normal (u/s), so grazing hits still pop off
 const HATCHET_FLY_KX = 0.50, HATCHET_FLY_KY = 0.12, HATCHET_FLY_MAX = 450;
 const HATCHET_FLY_VX = 500, HATCHET_FLY_VY = 100;
 const PAD_TETHER_K = 0, PAD_TETHER_MAX = 160, PAD_TETHER_SLACK = 10;
